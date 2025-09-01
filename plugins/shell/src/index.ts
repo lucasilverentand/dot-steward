@@ -1,19 +1,19 @@
-import { Base, z } from "@dot-steward/core";
+import { Base, Plugin, z } from "@dot-steward/core";
 
 export const ShellEnvVar = Base.extend({
-  module: z.literal("shell"),
+  plugin: z.literal("shell"),
   kind: z.literal("env"),
   key: z.string(),
   value: z.string(),
 });
 export const ShellAlias = Base.extend({
-  module: z.literal("shell"),
+  plugin: z.literal("shell"),
   kind: z.literal("alias"),
   name: z.string(),
   command: z.string(),
 });
 export const ShellPath = Base.extend({
-  module: z.literal("shell"),
+  plugin: z.literal("shell"),
   kind: z.literal("path"),
   dir: z.string(),
 });
@@ -22,7 +22,13 @@ export type Env = z.infer<typeof ShellEnvVar>;
 export type Alias = z.infer<typeof ShellAlias>;
 export type PathItem = z.infer<typeof ShellPath>;
 
-export type Item = Env | Alias | PathItem;
+export const ShellItem = z.discriminatedUnion("kind", [
+  ShellEnvVar,
+  ShellAlias,
+  ShellPath,
+]);
+export type ShellItem = z.infer<typeof ShellItem>;
+
 export type Shell = "bash" | "zsh" | "sh";
 
 function quote(value: string): string {
@@ -34,7 +40,7 @@ export class ShellConfig {
   private aliases = new Map<string, string>();
   private paths: string[] = [];
 
-  collect(item: Item): void {
+  collect(item: ShellItem): void {
     if (item.kind === "env") {
       this.envVars.set(item.key, item.value);
     } else if (item.kind === "alias") {
@@ -69,9 +75,9 @@ export class ShellConfig {
   }
 }
 
-type EnvInput = Omit<Env, "module" | "kind">;
-type AliasInput = Omit<Alias, "module" | "kind">;
-type PathInput = Omit<PathItem, "module" | "kind">;
+type EnvInput = Omit<Env, "plugin" | "kind">;
+type AliasInput = Omit<Alias, "plugin" | "kind">;
+type PathInput = Omit<PathItem, "plugin" | "kind">;
 
 export function env(id: string, key: string, value: string): Env;
 export function env(input: EnvInput): Env;
@@ -82,9 +88,9 @@ export function env(
 ): Env {
   if (typeof idOrInput === "string") {
     if (!key || !value) throw new Error("key and value are required");
-    return { module: "shell", kind: "env", id: idOrInput, key, value };
+    return { plugin: "shell", kind: "env", id: idOrInput, key, value };
   }
-  return { module: "shell", kind: "env", ...idOrInput };
+  return { plugin: "shell", kind: "env", ...idOrInput };
 }
 
 export function alias(id: string, name: string, command: string): Alias;
@@ -96,9 +102,9 @@ export function alias(
 ): Alias {
   if (typeof idOrInput === "string") {
     if (!name || !command) throw new Error("name and command are required");
-    return { module: "shell", kind: "alias", id: idOrInput, name, command };
+    return { plugin: "shell", kind: "alias", id: idOrInput, name, command };
   }
-  return { module: "shell", kind: "alias", ...idOrInput };
+  return { plugin: "shell", kind: "alias", ...idOrInput };
 }
 
 export function path(id: string, dir: string): PathItem;
@@ -106,7 +112,14 @@ export function path(input: PathInput): PathItem;
 export function path(idOrInput: string | PathInput, dir?: string): PathItem {
   if (typeof idOrInput === "string") {
     if (!dir) throw new Error("dir is required");
-    return { module: "shell", kind: "path", id: idOrInput, dir };
+    return { plugin: "shell", kind: "path", id: idOrInput, dir };
   }
-  return { module: "shell", kind: "path", ...idOrInput };
+  return { plugin: "shell", kind: "path", ...idOrInput };
 }
+
+export class ShellPlugin extends Plugin<ShellItem> {
+  name = "shell";
+  schema = ShellItem;
+}
+
+export const plugin = new ShellPlugin();

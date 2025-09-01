@@ -20,7 +20,7 @@ export {
   ShellPath,
 };
 
-export const Item = z.discriminatedUnion("module", [
+export const Item = z.discriminatedUnion("plugin", [
   CommandItem,
   AptItem,
   BrewFormula,
