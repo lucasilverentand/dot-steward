@@ -9,27 +9,6 @@
         "typescript": "^5.4.0",
       },
     },
-    "packages/apt": {
-      "name": "@dot-steward/apt",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
-    "packages/brew": {
-      "name": "@dot-steward/brew",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
-    "packages/command": {
-      "name": "@dot-steward/command",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
     "packages/core": {
       "name": "@dot-steward/core",
       "version": "0.0.0",
@@ -49,14 +28,35 @@
         "@dot-steward/shell": "workspace:*",
       },
     },
-    "packages/file": {
+    "plugins/apt": {
+      "name": "@dot-steward/apt",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/brew": {
+      "name": "@dot-steward/brew",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/command": {
+      "name": "@dot-steward/command",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/file": {
       "name": "@dot-steward/file",
       "version": "0.0.0",
       "dependencies": {
         "@dot-steward/core": "workspace:*",
       },
     },
-    "packages/shell": {
+    "plugins/shell": {
       "name": "@dot-steward/shell",
       "version": "0.0.0",
       "dependencies": {
@@ -83,17 +83,17 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.2.2", "", { "os": "win32", "cpu": "x64" }, "sha512-DAuHhHekGfiGb6lCcsT4UyxQmVwQiBCBUMwVra/dcOSs9q8OhfaZgey51MlekT3p8UwRqtXQfFuEJBhJNdLZwg=="],
 
-    "@dot-steward/apt": ["@dot-steward/apt@workspace:packages/apt"],
+    "@dot-steward/apt": ["@dot-steward/apt@workspace:plugins/apt"],
 
-    "@dot-steward/brew": ["@dot-steward/brew@workspace:packages/brew"],
+    "@dot-steward/brew": ["@dot-steward/brew@workspace:plugins/brew"],
 
-    "@dot-steward/command": ["@dot-steward/command@workspace:packages/command"],
+    "@dot-steward/command": ["@dot-steward/command@workspace:plugins/command"],
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
 
-    "@dot-steward/file": ["@dot-steward/file@workspace:packages/file"],
+    "@dot-steward/file": ["@dot-steward/file@workspace:plugins/file"],
 
-    "@dot-steward/shell": ["@dot-steward/shell@workspace:packages/shell"],
+    "@dot-steward/shell": ["@dot-steward/shell@workspace:plugins/shell"],
 
     "dot-steward": ["dot-steward@workspace:packages/dot-steward"],
 

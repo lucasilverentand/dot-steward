@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "packageManager": "bun@1.2.14",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "plugins/*"
   ],
   "scripts": {
     "dev": "turbo run dev",
