@@ -10,6 +10,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "biome lint .",
+    "lint:fix": "biome lint . --write",
     "lint:all": "turbo run lint",
     "format": "biome format . --write",
     "test": "turbo run test"
