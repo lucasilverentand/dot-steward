@@ -2,10 +2,9 @@
   "name": "@dot-steward/apt",
   "version": "0.0.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
     "lint": "biome lint .",
     "test": "echo 'no tests'"
   },
