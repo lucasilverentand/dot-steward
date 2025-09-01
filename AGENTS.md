@@ -26,3 +26,13 @@ bun run lint
 bun run test
 ```
 
+## Commit Messages
+
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. Each commit message begins with a type such as `feat`, `fix`, or `docs` and may include an optional scope. Use the imperative mood for the description.
+
+Example:
+
+```text
+docs: add commit message guidelines
+```
+
