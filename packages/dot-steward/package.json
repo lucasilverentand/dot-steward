@@ -6,7 +6,7 @@
   "types": "src/index.ts",
   "scripts": {
     "lint": "biome lint .",
-    "test": "echo 'no tests'"
+    "test": "bun test"
   },
   "dependencies": {
     "@dot-steward/core": "workspace:*",
