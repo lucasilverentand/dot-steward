@@ -18,7 +18,7 @@ runner and [Biome](https://biomejs.dev) for code quality.
 - Always run `bun run lint:fix` and `bun run format` before committing and
   commit any changes they produce.
 - The Biome workflow runs these commands and automatically commits any
-  resulting changes.
+  resulting changes using the [`lucasilverentand/auto-commit`](https://github.com/lucasilverentand/auto-commit) action.
 - Biome configuration lives in `biome.json`; adhere to its rules.
 
 ## Verification
