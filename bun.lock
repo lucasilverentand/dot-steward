@@ -23,6 +23,17 @@
         "@dot-steward/core": "workspace:*",
       },
     },
+    "packages/cli": {
+      "name": "@dot-steward/cli",
+      "version": "0.0.0",
+      "bin": {
+        "stew": "src/index.ts",
+      },
+      "dependencies": {
+        "commander": "^14.0.0",
+        "dot-steward": "workspace:*",
+      },
+    },
     "packages/command": {
       "name": "@dot-steward/command",
       "version": "0.0.0",
@@ -87,6 +98,8 @@
 
     "@dot-steward/brew": ["@dot-steward/brew@workspace:packages/brew"],
 
+    "@dot-steward/cli": ["@dot-steward/cli@workspace:packages/cli"],
+
     "@dot-steward/command": ["@dot-steward/command@workspace:packages/command"],
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
@@ -94,6 +107,8 @@
     "@dot-steward/file": ["@dot-steward/file@workspace:packages/file"],
 
     "@dot-steward/shell": ["@dot-steward/shell@workspace:packages/shell"],
+
+    "commander": ["commander@14.0.0", "", {}, "sha512-2uM9rYjPvyq39NwLRqaiLtWHyDC1FvryJDa2ATTVims5YAS4PupsEQsDvP14FqhFr0P49CYDugi59xaxJlTXRA=="],
 
     "dot-steward": ["dot-steward@workspace:packages/dot-steward"],
 
