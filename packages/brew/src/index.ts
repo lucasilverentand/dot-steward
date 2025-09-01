@@ -1,4 +1,4 @@
-import { z, Base } from "@dot-steward/core";
+import { Base, z } from "@dot-steward/core";
 
 export const BrewTap = Base.extend({
   module: z.literal("brew"),

@@ -1,9 +1,9 @@
-import { z, OS } from "@dot-steward/core";
-import { CommandItem } from "@dot-steward/command";
 import { AptItem } from "@dot-steward/apt";
-import { BrewFormula, BrewTap, BrewCask } from "@dot-steward/brew";
-import { FileEnsure, FileDir, FileSymlink } from "@dot-steward/file";
-import { ShellEnvVar, ShellAlias, ShellPath } from "@dot-steward/shell";
+import { BrewCask, BrewFormula, BrewTap } from "@dot-steward/brew";
+import { CommandItem } from "@dot-steward/command";
+import { OS, z } from "@dot-steward/core";
+import { FileDir, FileEnsure, FileSymlink } from "@dot-steward/file";
+import { ShellAlias, ShellEnvVar, ShellPath } from "@dot-steward/shell";
 
 export {
   OS,
@@ -35,9 +35,9 @@ export const Item = z.discriminatedUnion("module", [
 ]);
 export type Item = z.infer<typeof Item>;
 
-export * as command from "@dot-steward/command";
 export * as apt from "@dot-steward/apt";
 export * as brew from "@dot-steward/brew";
+export * as command from "@dot-steward/command";
 export * as file from "@dot-steward/file";
 export * as shell from "@dot-steward/shell";
 

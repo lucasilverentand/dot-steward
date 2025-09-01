@@ -1,4 +1,4 @@
-import { z, Base } from "@dot-steward/core";
+import { Base, z } from "@dot-steward/core";
 
 export const AptItem = Base.extend({
   module: z.literal("apt"),
