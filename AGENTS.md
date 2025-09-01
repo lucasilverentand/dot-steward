@@ -38,3 +38,12 @@ Example:
 ```text
 docs: add commit message guidelines
 ```
+
+## Modules
+
+- `index.ts` files act only as barrel files that re-export from sibling modules.
+- Keep implementation code in small, focused files rather than `index.ts`.
+
+## Repository Knowledge
+
+- Whenever a change affects how we think about the code or repository, update this `AGENTS.md` to reflect the new understanding.
