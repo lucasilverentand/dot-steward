@@ -1,4 +1,5 @@
 import { Base, z } from "@dot-steward/core";
+import { cmd, type Command } from "@dot-steward/command";
 
 export const BrewTap = Base.extend({
   module: z.literal("brew"),
@@ -46,4 +47,20 @@ export function cask(idOrInput: string | CaskInput): Cask {
     return { module: "brew", kind: "cask", id: idOrInput };
   }
   return { module: "brew", kind: "cask", ...idOrInput };
+}
+
+export function prepare(): Command[] {
+  return [
+    cmd(
+      "brew-install",
+      "command -v brew >/dev/null 2>&1",
+      
+      "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+    ),
+    cmd(
+      "brew-bundle-tap",
+      "brew tap | grep -q '^homebrew/bundle$'",
+      "brew tap homebrew/bundle",
+    ),
+  ];
 }

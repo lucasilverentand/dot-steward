@@ -65,3 +65,20 @@ export interface Plan {
 export function plan(p: Plan): Plan {
   return p;
 }
+
+export async function prepare(plan: Plan): Promise<Item[]> {
+  const mods = new Set(
+    plan.profiles.flatMap((profile) => profile.items.map((item) => item.module)),
+  );
+  const items: Item[] = [];
+  for (const mod of mods) {
+    try {
+      const m: unknown = await import(`@dot-steward/${mod}`);
+      const fn = (m as { prepare?: () => Item[] }).prepare;
+      if (typeof fn === "function") items.push(...fn());
+    } catch {
+      // ignore modules that cannot be loaded
+    }
+  }
+  return items;
+}

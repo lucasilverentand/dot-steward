@@ -9,6 +9,7 @@
     "test": "echo 'no tests'"
   },
   "dependencies": {
-    "@dot-steward/core": "workspace:*"
+    "@dot-steward/core": "workspace:*",
+    "@dot-steward/command": "workspace:*"
   }
 }
