@@ -1,0 +1,21 @@
+{
+  "name": "@dot-steward/monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "bun@1.2.14",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "biome lint .",
+    "lint:all": "turbo run lint",
+    "format": "biome format . --write",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "latest",
+    "turbo": "latest"
+  }
+}
