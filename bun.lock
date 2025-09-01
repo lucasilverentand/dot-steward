@@ -9,23 +9,21 @@
         "typescript": "^5.4.0",
       },
     },
+    "packages/cli": {
+      "name": "@dot-steward/cli",
+      "version": "0.0.0",
+      "bin": {
+        "dot-steward": "src/cli.ts",
+      },
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@dot-steward/core",
       "version": "0.0.0",
       "dependencies": {
         "zod": "^3.22.4",
-      },
-    },
-    "packages/dot-steward": {
-      "name": "dot-steward",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/apt": "workspace:*",
-        "@dot-steward/brew": "workspace:*",
-        "@dot-steward/command": "workspace:*",
-        "@dot-steward/core": "workspace:*",
-        "@dot-steward/file": "workspace:*",
-        "@dot-steward/shell": "workspace:*",
       },
     },
     "plugins/apt": {
@@ -87,6 +85,8 @@
 
     "@dot-steward/brew": ["@dot-steward/brew@workspace:plugins/brew"],
 
+    "@dot-steward/cli": ["@dot-steward/cli@workspace:packages/cli"],
+
     "@dot-steward/command": ["@dot-steward/command@workspace:plugins/command"],
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
@@ -94,8 +94,6 @@
     "@dot-steward/file": ["@dot-steward/file@workspace:plugins/file"],
 
     "@dot-steward/shell": ["@dot-steward/shell@workspace:plugins/shell"],
-
-    "dot-steward": ["dot-steward@workspace:packages/dot-steward"],
 
     "turbo": ["turbo@2.5.6", "", { "optionalDependencies": { "turbo-darwin-64": "2.5.6", "turbo-darwin-arm64": "2.5.6", "turbo-linux-64": "2.5.6", "turbo-linux-arm64": "2.5.6", "turbo-windows-64": "2.5.6", "turbo-windows-arm64": "2.5.6" }, "bin": { "turbo": "bin/turbo" } }, "sha512-gxToHmi9oTBNB05UjUsrWf0OyN5ZXtD0apOarC1KIx232Vp3WimRNy3810QzeNSgyD5rsaIDXlxlbnOzlouo+w=="],
 
