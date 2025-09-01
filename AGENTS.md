@@ -16,8 +16,9 @@ runner and [Biome](https://biomejs.dev) for code quality.
 - Automatically fix lint issues with `bun run lint:fix`.
 - Format files with `bun run format`.
 - Always run `bun run lint:fix` and `bun run format` before committing and
-  commit any changes they produce. CI fails if these commands would modify
-  files.
+  commit any changes they produce.
+- The Biome workflow runs these commands and automatically commits any
+  resulting changes.
 - Biome configuration lives in `biome.json`; adhere to its rules.
 
 ## Verification
