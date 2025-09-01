@@ -15,19 +15,25 @@ runner and [Biome](https://biomejs.dev) for code quality.
 - Lint the codebase with `bun run lint`.
 - Automatically fix lint issues with `bun run lint:fix`.
 - Format files with `bun run format`.
+- Always run `bun run lint:fix` and `bun run format` before committing and
+  commit any changes they produce.
+- The Biome workflow runs `bun run lint:fix` and `bun run format` and automatically
+  commits any resulting changes using the
+  [`lucasilverentand/auto-commit`](https://github.com/lucasilverentand/auto-commit) action.
 - Biome configuration lives in `biome.json`; adhere to its rules.
 
 ## Verification
 
-Before committing changes, ensure the following commands succeed:
+Run the fixer and formatter, then verify:
 
 ```
-bun run lint
+bun run lint:fix
 bun run format
+bun run lint
 bun run test
 ```
-You may run `bun run lint:fix` to automatically resolve lint issues before
-verifying. All three commands above must pass before committing.
+All four commands must pass, and any modifications from the fixer or
+formatter must be committed.
 
 ## Commit Messages
 
@@ -38,3 +44,12 @@ Example:
 ```text
 docs: add commit message guidelines
 ```
+
+## Modules
+
+- `index.ts` files act only as barrel files that re-export from sibling modules.
+- Keep implementation code in small, focused files rather than `index.ts`.
+
+## Repository Knowledge
+
+- Whenever a change affects how we think about the code or repository, update this `AGENTS.md` to reflect the new understanding.
