@@ -1,0 +1,15 @@
+{
+  "name": "@dot-steward/file",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "@dot-steward/core": "workspace:*"
+  }
+}
