@@ -19,12 +19,15 @@ runner and [Biome](https://biomejs.dev) for code quality.
 
 ## Verification
 
-Before committing changes, make sure the following commands succeed:
+Before committing changes, ensure the following commands succeed:
 
 ```
 bun run lint
+bun run format
 bun run test
 ```
+You may run `bun run lint:fix` to automatically resolve lint issues before
+verifying. All three commands above must pass before committing.
 
 ## Commit Messages
 
@@ -35,4 +38,3 @@ Example:
 ```text
 docs: add commit message guidelines
 ```
-
