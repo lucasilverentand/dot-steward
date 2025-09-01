@@ -10,12 +10,14 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "biome lint .",
+    "lint:fix": "biome lint . --write",
     "lint:all": "turbo run lint",
     "format": "biome format . --write",
     "test": "turbo run test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.2",
-    "turbo": "latest"
+    "turbo": "latest",
+    "typescript": "^5.4.0"
   }
 }
