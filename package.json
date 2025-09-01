@@ -15,7 +15,7 @@
     "test": "turbo run test"
   },
   "devDependencies": {
-    "@biomejs/biome": "latest",
+    "@biomejs/biome": "2.2.2",
     "turbo": "latest"
   }
 }
