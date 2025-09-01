@@ -6,9 +6,9 @@ This repository is organized as a Bun/Turborepo monorepo and publishes packages 
 
 ## Packages
 
-- `packages/` – shared libraries and the high level `dot-steward` package.
+- `packages/` – shared libraries and the CLI.
   - `@dot-steward/core` – shared types and the base `Plugin` class.
-  - `dot-steward` – entry point that re-exports all plugin helpers.
+  - `@dot-steward/cli` – command-line interface.
 - `plugins/` – modular plugins that contribute item types:
   - `@dot-steward/apt` – APT packages for Debian/Ubuntu systems.
   - `@dot-steward/brew` – Homebrew taps, formulas, and casks.
@@ -18,21 +18,10 @@ This repository is organized as a Bun/Turborepo monorepo and publishes packages 
 
 ## Usage
 
-```ts
-import { plan, profile, apt, brew, command, file, shell } from "dot-steward";
+Run the CLI with Bun:
 
-const workstation = profile("workstation", {
-  match: { os: "linux" },
-  items: [
-    command.cmd("git", "git --version", "sudo apt install git"),
-    apt.pkg("curl"),
-    brew.formula("node"),
-    file.ensure("vimrc", "~/.vimrc", "set number"),
-    shell.alias("list", "ll", "ls -la"),
-  ],
-});
-
-const setup = plan({ profiles: [workstation] });
+```sh
+bunx @dot-steward/cli
 ```
 
 Plans group profiles with match conditions and a list of items from the plugin ecosystem.
