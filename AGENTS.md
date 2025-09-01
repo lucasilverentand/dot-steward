@@ -21,6 +21,8 @@ runner and [Biome](https://biomejs.dev) for code quality.
   commits any resulting changes using the
   [`lucasilverentand/auto-commit`](https://github.com/lucasilverentand/auto-commit) action.
 - Biome configuration lives in `biome.json`; adhere to its rules.
+- Tests run on pull requests via `.github/workflows/test.yml`, which executes
+  `bun run lint` and `bun run test`.
 
 ## Verification
 
