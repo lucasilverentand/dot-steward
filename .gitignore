@@ -1,6 +1,0 @@
-node_modules
-.bun
-.cache
-.turbo
-bun.lockb
-dist
