@@ -1,0 +1,59 @@
+{
+  "header": {
+    "createdAt": "2025-09-02T21:43:04.315Z",
+    "engine": {
+      "name": "bun",
+      "version": "1.2.21"
+    },
+    "profiles": [
+      "darwin-base"
+    ],
+    "description": "Draft plan (no-op actions)"
+  },
+  "nodes": [
+    {
+      "id": "node:brew:cowsay",
+      "itemId": "brew:cowsay",
+      "pluginId": "brew",
+      "capabilityId": "brew.formula",
+      "action": "ensure",
+      "diff": {
+        "current": null,
+        "desired": {
+          "name": "cowsay"
+        },
+        "idempotent": true,
+        "changes": [
+          {
+            "path": "brew.formula:cowsay",
+            "to": "present"
+          }
+        ]
+      },
+      "locks": [],
+      "metadata": {
+        "kind": "package",
+        "spec": {
+          "name": "cowsay"
+        }
+      }
+    }
+  ],
+  "edges": [],
+  "previews": [
+    {
+      "current": null,
+      "desired": {
+        "name": "cowsay"
+      },
+      "idempotent": true,
+      "changes": [
+        {
+          "path": "brew.formula:cowsay",
+          "to": "present"
+        }
+      ]
+    }
+  ],
+  "hash": "c3306176dc237962"
+}
