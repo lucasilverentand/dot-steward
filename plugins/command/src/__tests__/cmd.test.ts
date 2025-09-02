@@ -23,8 +23,7 @@ describe("command cmd", () => {
     expect(() => cmd("bad", "ok")).toThrow("check and apply are required");
   });
 
-  test("validates with plugin schema", () => {
-    const item = cmd("id1", "echo", "run");
-    expect(plugin.schema.parse(item)).toEqual(item);
+  test("plugin exposes name", () => {
+    expect(plugin.name).toBe("command");
   });
 });

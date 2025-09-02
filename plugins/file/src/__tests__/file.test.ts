@@ -55,8 +55,7 @@ describe("file plugin", () => {
     );
   });
 
-  test("validate with plugin schema", () => {
-    const item = dir("data", "/var/data");
-    expect(plugin.schema.parse(item)).toEqual(item);
+  test("plugin exposes name", () => {
+    expect(plugin.name).toBe("file");
   });
 });

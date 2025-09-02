@@ -14,8 +14,7 @@ describe("apt pkg", () => {
     });
   });
 
-  test("validates with plugin schema", () => {
-    const item = pkg("git");
-    expect(plugin.schema.parse(item)).toEqual(item);
+  test("plugin exposes name", () => {
+    expect(plugin.name).toBe("apt");
   });
 });

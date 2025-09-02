@@ -8,7 +8,5 @@
     "lint": "biome lint .",
     "test": "bun test"
   },
-  "dependencies": {
-    "zod": "^3.22.4"
-  }
+  "dependencies": {}
 }

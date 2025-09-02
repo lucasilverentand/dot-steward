@@ -14,6 +14,7 @@
       "version": "0.0.0",
       "bin": {
         "dot-steward": "src/cli.ts",
+        "stew": "src/cli.ts",
       },
       "dependencies": {
         "@dot-steward/core": "workspace:*",
@@ -45,6 +46,16 @@
       "version": "0.0.0",
       "dependencies": {
         "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/config": {
+      "name": "@dot-steward/config",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+        "@dot-steward/file": "workspace:*",
+        "@iarna/toml": "^2.2.5",
+        "yaml": "^2.8.1",
       },
     },
     "plugins/file": {
@@ -89,11 +100,15 @@
 
     "@dot-steward/command": ["@dot-steward/command@workspace:plugins/command"],
 
+    "@dot-steward/config": ["@dot-steward/config@workspace:plugins/config"],
+
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
 
     "@dot-steward/file": ["@dot-steward/file@workspace:plugins/file"],
 
     "@dot-steward/shell": ["@dot-steward/shell@workspace:plugins/shell"],
+
+    "@iarna/toml": ["@iarna/toml@2.2.5", "", {}, "sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg=="],
 
     "turbo": ["turbo@2.5.6", "", { "optionalDependencies": { "turbo-darwin-64": "2.5.6", "turbo-darwin-arm64": "2.5.6", "turbo-linux-64": "2.5.6", "turbo-linux-arm64": "2.5.6", "turbo-windows-64": "2.5.6", "turbo-windows-arm64": "2.5.6" }, "bin": { "turbo": "bin/turbo" } }, "sha512-gxToHmi9oTBNB05UjUsrWf0OyN5ZXtD0apOarC1KIx232Vp3WimRNy3810QzeNSgyD5rsaIDXlxlbnOzlouo+w=="],
 
@@ -110,6 +125,8 @@
     "turbo-windows-arm64": ["turbo-windows-arm64@2.5.6", "", { "os": "win32", "cpu": "arm64" }, "sha512-j/tWu8cMeQ7HPpKri6jvKtyXg9K1gRyhdK4tKrrchH8GNHscPX/F71zax58yYtLRWTiK04zNzPcUJuoS0+v/+Q=="],
 
     "typescript": ["typescript@5.9.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A=="],
+
+    "yaml": ["yaml@2.8.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw=="],
 
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
   }

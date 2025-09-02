@@ -1,7 +1,6 @@
-import type { z } from "zod";
-
-export abstract class Plugin<T = unknown> {
+export abstract class Plugin<_T = unknown> {
+  // Unique plugin name (e.g. "brew", "shell")
   abstract readonly name: string;
-  abstract readonly schema: z.ZodType<T>;
+  // Optional lifecycle hook
   prepare?(): Promise<void> | void;
 }

@@ -9,6 +9,7 @@ This repository is organized as a Bun/Turborepo monorepo and publishes packages 
 - `packages/` – shared libraries and the CLI.
   - `@dot-steward/core` – shared types and the base `Plugin` class.
   - `@dot-steward/cli` – command-line interface.
+  - `@dot-steward/matchers` – common matchers like `darwin`, `linux`, and logical `any`.
 - `plugins/` – modular plugins that contribute item types:
   - `@dot-steward/apt` – APT packages for Debian/Ubuntu systems.
   - `@dot-steward/brew` – Homebrew taps, formulas, and casks.
@@ -22,6 +23,25 @@ Run the CLI with Bun:
 
 ```sh
 bunx @dot-steward/cli
+```
+
+For local development inside this repo:
+
+```sh
+# install deps (postinstall auto-links the CLI globally for local dev)
+bun install
+
+# ensure Bun's global bin is on your PATH (once):
+#   echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc  # or ~/.bashrc
+
+# run the linked CLI globally
+stew
+
+# alternatively: run the workspace package directly (no global link needed)
+bun run cli
+
+# or from the package folder
+bun run -C packages/cli dev
 ```
 
 Plans group profiles with match conditions and a list of items from the plugin ecosystem.

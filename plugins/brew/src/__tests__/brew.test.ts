@@ -26,8 +26,7 @@ describe("brew functions", () => {
     });
   });
 
-  test("validates with plugin schema", () => {
-    const item = formula("bun");
-    expect(plugin.schema.parse(item)).toEqual(item);
+  test("plugin exposes name", () => {
+    expect(plugin.name).toBe("brew");
   });
 });

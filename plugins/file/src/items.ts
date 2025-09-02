@@ -1,30 +1,22 @@
-import { Base, z } from "@dot-steward/core";
+export interface Ensure {
+  id: string;
+  plugin: "file";
+  kind: "ensure";
+  path: string;
+  content: string;
+}
+export interface Dir {
+  id: string;
+  plugin: "file";
+  kind: "dir";
+  path: string;
+}
+export interface Symlink {
+  id: string;
+  plugin: "file";
+  kind: "symlink";
+  path: string;
+  target: string;
+}
 
-export const FileEnsure = Base.extend({
-  plugin: z.literal("file"),
-  kind: z.literal("ensure"),
-  path: z.string(),
-  content: z.string().default(""),
-});
-export const FileDir = Base.extend({
-  plugin: z.literal("file"),
-  kind: z.literal("dir"),
-  path: z.string(),
-});
-export const FileSymlink = Base.extend({
-  plugin: z.literal("file"),
-  kind: z.literal("symlink"),
-  path: z.string(),
-  target: z.string(),
-});
-
-export type Ensure = z.infer<typeof FileEnsure>;
-export type Dir = z.infer<typeof FileDir>;
-export type Symlink = z.infer<typeof FileSymlink>;
-
-export const FileItem = z.discriminatedUnion("kind", [
-  FileEnsure,
-  FileDir,
-  FileSymlink,
-]);
-export type FileItem = z.infer<typeof FileItem>;
+export type FileItem = Ensure | Dir | Symlink;

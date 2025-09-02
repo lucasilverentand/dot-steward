@@ -46,8 +46,7 @@ describe("shell plugin", () => {
     expect(config.renderAll().bash).toBe(expected);
   });
 
-  test("plugin schema parses items", () => {
-    const item = env("id", "K", "V");
-    expect(plugin.schema.parse(item)).toEqual(item);
+  test("plugin exposes name", () => {
+    expect(plugin.name).toBe("shell");
   });
 });

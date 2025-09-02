@@ -55,3 +55,10 @@ docs: add commit message guidelines
 ## Repository Knowledge
 
 - Whenever a change affects how we think about the code or repository, update this `AGENTS.md` to reflect the new understanding.
+- The CLI lives in `packages/cli` and exposes `stew` and `dot-steward` binaries via the `bin` field.
+- Matchers live in `packages/matchers` and export `darwin`, `linux`, and `any`/`match_any` to compose profile conditions.
+- Core provides a simple id generator at `packages/core/src/id.ts` (`generateId(prefix?: string | {prefix?: string, length?: number})`). Zod has been removed; plugins and items rely on TypeScript types and lightweight helpers instead of runtime schemas.
+- Local usage without publishing:
+  - After `bun install`, the root postinstall runs `bun -C packages/cli link`, creating a global `stew` and `dot-steward` in `~/.bun/bin`.
+  - Ensure `~/.bun/bin` is on `PATH` and run `stew` from anywhere.
+  - Alternatively, run `bun run cli` at the repo root, or `bun run -C packages/cli dev`.

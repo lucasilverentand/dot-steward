@@ -1,9 +1,8 @@
 import { Plugin } from "@dot-steward/core";
-import { BrewItem } from "./items";
+import type { BrewItem } from "./items";
 
 export class BrewPlugin extends Plugin<BrewItem> {
   name = "brew";
-  schema = BrewItem;
   async prepare(): Promise<void> {
     // no-op
   }

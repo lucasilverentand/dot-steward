@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
+    "cli": "turbo run dev --filter=@dot-steward/cli",
+    "postinstall": "bun scripts/postinstall.ts",
     "lint": "biome lint .",
     "lint:fix": "biome lint . --write",
     "lint:all": "turbo run lint",
