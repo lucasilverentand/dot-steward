@@ -16,8 +16,6 @@ const brew = new BrewPlugin();
 const cfg = config({
   profiles: [
     profile("base", {
-      // Reference by id to lint presence
-      plugins: ["brew"],
       // Use the same instance to construct items
       items: [
         brew.formula({ name: "git" }),

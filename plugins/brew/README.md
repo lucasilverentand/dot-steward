@@ -20,7 +20,6 @@ const cfg = config({
   plugins: [brew],
   profiles: [
     profile("darwin-base", {
-      plugins: ["brew"],
       items: [
         brew.formula("git"),
         brew.tap("homebrew/cask"),

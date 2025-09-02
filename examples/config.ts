@@ -7,7 +7,6 @@ export default config({
   plugins: [brew],
   profiles: [
     profile("darwin-base", {
-      plugins: ["brew"],
       items: [],
     }),
   ],

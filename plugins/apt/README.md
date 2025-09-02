@@ -18,7 +18,6 @@ import { defineProfile, defineConfig, DotFileManager } from "@dot-steward/core";
 const ap = apt();
 
 const p = defineProfile("debian", {
-  plugins: ["apt"],
   items: [
     ap.package("curl"),
     ap.repo("myrepo"),

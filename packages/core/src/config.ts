@@ -13,7 +13,6 @@ export function defineProfile(
     variables: init.variables ?? {},
     includes: init.includes ?? [],
     apps: init.apps ?? [],
-    plugins: init.plugins ?? [],
     items: init.items ?? [],
     matcher: init.matcher,
   } satisfies Profile;
