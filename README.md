@@ -18,34 +18,25 @@ Monorepo for a Bun-based dot file manager. This repo hosts the core library (inc
 3. Lint/format: `bun run lint` / `bun run format`
 
 ## Example
-Define config with profiles (see `examples/example.config.ts`):
+Define a config with profiles (all profiles and items apply; no selection):
 
 ```ts
 import { config, profile } from "@dot-steward/core";
 
 export const profiles = [
-  // Base profile applies everywhere
-  profile("base", {
+  profile({
+    name: "base",
     priority: 0,
     variables: { EDITOR: "nvim" },
     items: [
       { id: "env:editor", kind: "env", spec: { name: "EDITOR", value: "nvim" } },
     ],
   }),
-
-  // macOS-specific profile
-  profile("darwin", {
-    matcher: { os: "darwin" },
+  profile({
+    name: "packages",
     items: [
-      { id: "pkg:git", kind: "package", spec: { provider: "brew", name: "git" } },
-    ],
-  }),
-
-  // Linux-specific profile
-  profile("linux", {
-    matcher: { os: "linux" },
-    items: [
-      { id: "pkg:git", kind: "package", spec: { provider: "apt", name: "git" } },
+      { id: "pkg:git-brew", kind: "package", spec: { provider: "brew", name: "git" } },
+      { id: "pkg:git-apt", kind: "package", spec: { provider: "apt", name: "git" } },
     ],
   }),
 ];
@@ -53,4 +44,4 @@ export const profiles = [
 export default config({ profiles });
 ```
 
-Code is not implemented yet; this is the repository skeleton following `docs/design.md`.
+Note: Profiles apply if their `match` evaluates true (or if `match` is omitted). Matched profiles are applied in order of appearance.

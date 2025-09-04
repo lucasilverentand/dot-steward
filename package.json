@@ -7,10 +7,15 @@
   },
   "workspaces": ["packages/*", "apps/*", "plugins/*"],
   "scripts": {
-    "lint": "biome check .",
+    "lint": "biome check . && bun run scripts/check-static-this.mjs",
+    "lint:static-this": "bun run scripts/check-static-this.mjs",
     "format": "biome format --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.8.3"
+    "@biomejs/biome": "^1.8.3",
+    "@types/bun": "^1.2.21"
+  },
+  "dependencies": {
+    "zod": "^4.1.5"
   }
 }

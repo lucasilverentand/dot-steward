@@ -6,7 +6,7 @@ This document specifies the design of a Bun-based dot file manager. It describes
 
 ## 1. Overview
 
-The manager provides a declarative system for configuring environments across platforms. Core implements structured phases (analyze, plan, apply) and the execution engine, and it uses plugins for capabilities. Profiles allow environment-aware configuration.
+The manager provides a declarative system for configuring environments across platforms. Core implements structured phases (analyze, plan, apply) and the execution engine, and it uses plugins for capabilities. Profiles group configuration and apply when their `match` evaluates true (or when omitted), in order of appearance.
 
 ---
 
@@ -14,17 +14,17 @@ The manager provides a declarative system for configuring environments across pl
 
 ### 2.1 Plugins
 
-Plugins are provider bundles (brew, apt, file, git). They must be **ready** before use. Each defines schemas, probe functions, diffing, and actions. They enforce idempotency and lock when required.
+Plugins are provider bundles (brew, apt, file, git). They must be **ready** before use. Each defines schemas and implements mandatory probe, apply, and cleanup handlers. They enforce idempotency and lock when required.
 
 ### 2.2 Managed Items
 
-Items are atomic declarative targets (package, file, dir, service, env var, secret). Each has an id, desired spec, dependencies, probe, diff, and actions. Conflicts must be resolved by ownership or explicit replacement.
+Items are atomic declarative targets (package, file, dir, service, env var, secret). Each has an id, desired spec, dependencies, and lifecycle handlers (probe, apply, cleanup). Conflicts must be resolved by ownership or explicit replacement.
 
 ### 2.3 Phases
 
-- **Analyze**: Validates config, matchers, schemas, and detects conflicts.
-- **Plan**: Produces a DAG of actions with diffs and previews.
-- **Apply**: Executes a plan deterministically with locks and rollback policies.
+- **Analyze**: Validates config, schemas, and detects conflicts.
+- **Plan**: Probes each item and produces a DAG of actions.
+- **Apply**: Executes a plan deterministically with locks; cleanup runs in reverse dep order.
 
 ---
 
@@ -36,7 +36,7 @@ Holds plugin manifests, policies, and docs. Each plugin declares capabilities an
 
 ### 3.2 packages/
 
-Holds `@dot-steward/core` (which includes phases and the execution engine) and `@dot-steward/types`.
+Holds `@dot-steward/core` (which includes phases, execution engine, and API classes).
 
 ### 3.3 plugins/
 
@@ -48,15 +48,9 @@ Bundles of packages, configs, and managed items. Apps are composable and platfor
 
 ---
 
-## 4. Profiles and Matchers
+## 4. Profiles
 
-### 4.1 Profiles
-
-Profiles are named config units. They can include other profiles, define variables, apps, plugins, and items. All matching profiles apply. Order is determined by includes, priority, and stable tie-breaks.
-
-### 4.2 Matchers
-
-Declarative predicates evaluate host facts (os, distro, arch, user, hostname, env, container, virtualization). Composition supports `all`, `any`, and `not`. Includes respect matcher results.
+Profiles are named config units. They can include other profiles, define variables, apps, plugins, and items. Profiles apply when their `match` evaluates true. Order of application follows the order of appearance in the config.
 
 ---
 
@@ -64,7 +58,7 @@ Declarative predicates evaluate host facts (os, distro, arch, user, hostname, en
 
 ### 5.1 Plan Format
 
-Plans are deterministic artifacts with a header, nodes (actions), edges (dependencies and locks), and previews. They are reproducible and hash-stable.
+Plans are deterministic artifacts with a header, nodes (actions), and edges (dependencies and locks). They are reproducible and hash-stable.
 
 ### 5.2 Execution Engine
 
@@ -97,7 +91,6 @@ Reports execution progress, timings, and results. Logs are machine-readable.
 - `analyze`
 - `plan`
 - `apply`
-- `profiles list|matched|graph|explain`
 
 ---
 
@@ -106,7 +99,7 @@ Reports execution progress, timings, and results. Logs are machine-readable.
 - Signatures verify plugins and plans.
 - Privilege escalation is minimal and controlled.
 - Secrets are referenced, never stored.
-- Rollbacks are declared per action.
+-- Cleanup is explicit; destructive operations respect dependency order.
 - Conflicts and cycles are fatal unless explicitly overridden.
 
 ---
@@ -142,10 +135,6 @@ class CLI {
   +analyze()
   +plan()
   +apply()
-  +profilesList()
-  +profilesMatched()
-  +profilesGraph()
-  +profilesExplain()
 }
 CLI ..> DotFileManager : invokes
 
@@ -158,8 +147,8 @@ Phase <|-- AnalyzePhase
 Phase <|-- PlanPhase
 Phase <|-- ApplyPhase
 
-class AnalyzePhase { +validateSchemas() +resolveProfiles() +detectConflicts() +lint() }
-class PlanPhase { +buildDAG() +diffPreview() +emitPlan(): Plan }
+class AnalyzePhase { +validateSchemas() +detectConflicts() +lint() }
+class PlanPhase { +buildDAG(): Plan }
 class ApplyPhase { +executePlan(plan: Plan): ApplyReport }
 
 DotFileManager o-- AnalyzePhase
@@ -187,7 +176,7 @@ PackagesRepo *-- PackageMapping
 class App { +name +packages[] +items[] +platformAware: bool }
 AppsRepo *-- App
 
-%% Profiles and matchers
+%% Profiles
 class Profile {
   +name
   +priority
@@ -196,13 +185,9 @@ class Profile {
   +apps[]
   +plugins[]
   +items[]
-  +matched(facts): bool
 }
-class Matcher { +predicates +compose(all, any, not) +eval(facts): bool }
 class HostFacts { os distro arch user hostname env container virtualization }
 
-Profile --> Matcher
-Matcher --> HostFacts
 Profile --> App
 Profile --> ManagedItem
 Profile --> Plugin
@@ -217,8 +202,8 @@ class Plugin {
   +setup()
   +schema()
   +probe(item)
-  +diff(cur, desired)
-  +act(node)
+  +apply(node)
+  +cleanup(node)
   +lockScope(node)
 }
 PluginManifest --> Plugin : defines
@@ -230,8 +215,8 @@ class ManagedItem {
   +deps[]
   +owner?
   +probe()
-  +diff()
-  +actions()
+  +apply()
+  +cleanup()
   +validate()
 }
 <<abstract>> ManagedItem
@@ -256,7 +241,6 @@ class Plan {
   +header
   +nodes[]
   +edges[]
-  +previews[]
   +hash
   +serialize()
   +computeHash()
@@ -265,20 +249,16 @@ class ActionNode {
   +id
   +itemId
   +action
-  +diff
+  +state?
   +locks[]
-  +rollback: RollbackPolicy
   +risk
 }
 class Edge { +from +to +type: "dep|lock" }
-class Diff { +current +desired +changes +idempotent: bool }
-class RollbackPolicy { +strategy +steps[] }
+%% Diff and rollback removed; lifecycle is probe/apply/cleanup
 
 Plan *-- ActionNode
 Plan *-- Edge
 ActionNode ..> ManagedItem : targets
-ActionNode ..> Diff
-Plan ..> Diff : previews
 
 %% Execution
 class ExecutionEngine {
@@ -286,7 +266,6 @@ class ExecutionEngine {
   +execute(plan): ApplyReport
   +acquireLocks()
   +callPlugin()
-  +rollback()
   +idempotentCheck()
   +verifySignatures()
 }
@@ -294,7 +273,7 @@ class BunRuntime { +version }
 class PluginSandbox { +isolate(plugin) }
 class LockManager { +lock(scope) +unlock(scope) }
 class StateStore { +pluginReadiness +probes +checksums +lastPlans +get() +put() }
-class CacheStore { +templates +archives +diffs +hash(data) +get() +put() }
+class CacheStore { +templates +archives +hash(data) +get() +put() }
 class SignatureService { +verifyPlugin() +verifyPlan() }
 class PrivilegeManager { +withElevation(action) }
 class SecretsResolver { +resolve(ref) }
@@ -321,7 +300,7 @@ CLI ..> PlanReport
 CLI ..> ApplyReport
 
 %% Notes
-note for Plan "Deterministic artifact: header, nodes, edges, previews. Hash-stable."
+note for Plan "Deterministic artifact: header, nodes, edges. Hash-stable."
 note for DotFileManager "Guarantees: no probes before plugin ready; apply consumes plan; deterministic and auditable; multiple profiles may apply; actions idempotent and DAG-ordered."
 note for SignatureService "Safety: signatures verify plugins and plans; secrets are referenced only; minimal privilege; conflicts and cycles are fatal unless explicitly overridden."
 ```

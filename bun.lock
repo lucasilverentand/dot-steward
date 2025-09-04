@@ -3,66 +3,76 @@
   "workspaces": {
     "": {
       "name": "@dot-steward/workspace",
+      "dependencies": {
+        "zod": "^4.1.5",
+      },
       "devDependencies": {
         "@biomejs/biome": "^1.8.3",
+        "@types/bun": "^1.2.21",
       },
     },
-    "apps/cli": {
+    "packages/cli": {
       "name": "@dot-steward/cli",
       "version": "0.0.0",
       "bin": {
-        "dot-steward": "./src/index.ts",
+        "dot-steward": "src/cli.ts",
       },
       "dependencies": {
         "@dot-steward/core": "workspace:*",
-        "@dot-steward/types": "workspace:*",
-        "picocolors": "^1.0.0",
+        "commander": "^12.1.0",
       },
     },
     "packages/core": {
       "name": "@dot-steward/core",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/types": "workspace:*",
-      },
-    },
-    "packages/types": {
-      "name": "@dot-steward/types",
       "version": "0.0.0",
     },
     "plugins/apt": {
       "name": "@dot-steward/plugin-apt",
       "version": "0.0.0",
       "dependencies": {
-        "@dot-steward/types": "workspace:*",
+        "@dot-steward/core": "workspace:*",
       },
     },
     "plugins/brew": {
       "name": "@dot-steward/plugin-brew",
       "version": "0.0.0",
       "dependencies": {
-        "@dot-steward/types": "workspace:*",
+        "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/env": {
+      "name": "@dot-steward/plugin-env",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
       },
     },
     "plugins/file": {
       "name": "@dot-steward/plugin-file",
       "version": "0.0.0",
       "dependencies": {
-        "@dot-steward/types": "workspace:*",
+        "@dot-steward/core": "workspace:*",
       },
     },
     "plugins/git": {
       "name": "@dot-steward/plugin-git",
       "version": "0.0.0",
       "dependencies": {
-        "@dot-steward/types": "workspace:*",
+        "@dot-steward/core": "workspace:*",
       },
     },
     "plugins/repos": {
       "name": "@dot-steward/plugin-repos",
       "version": "0.0.0",
       "dependencies": {
-        "@dot-steward/types": "workspace:*",
+        "@dot-steward/core": "workspace:*",
+      },
+    },
+    "plugins/secret": {
+      "name": "@dot-steward/plugin-secret",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
       },
     },
   },
@@ -85,7 +95,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@1.9.4", "", { "os": "win32", "cpu": "x64" }, "sha512-8Y5wMhVIPaWe6jw2H+KlEm4wP/f7EW3810ZLmDlrEEy5KvBsb9ECEfu/kMWD484ijfQ8+nIi0giMgu9g1UAuuA=="],
 
-    "@dot-steward/cli": ["@dot-steward/cli@workspace:apps/cli"],
+    "@dot-steward/cli": ["@dot-steward/cli@workspace:packages/cli"],
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
 
@@ -93,14 +103,30 @@
 
     "@dot-steward/plugin-brew": ["@dot-steward/plugin-brew@workspace:plugins/brew"],
 
+    "@dot-steward/plugin-env": ["@dot-steward/plugin-env@workspace:plugins/env"],
+
     "@dot-steward/plugin-file": ["@dot-steward/plugin-file@workspace:plugins/file"],
 
     "@dot-steward/plugin-git": ["@dot-steward/plugin-git@workspace:plugins/git"],
 
     "@dot-steward/plugin-repos": ["@dot-steward/plugin-repos@workspace:plugins/repos"],
 
-    "@dot-steward/types": ["@dot-steward/types@workspace:packages/types"],
+    "@dot-steward/plugin-secret": ["@dot-steward/plugin-secret@workspace:plugins/secret"],
 
-    "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
+    "@types/bun": ["@types/bun@1.2.21", "", { "dependencies": { "bun-types": "1.2.21" } }, "sha512-NiDnvEqmbfQ6dmZ3EeUO577s4P5bf4HCTXtI6trMc6f6RzirY5IrF3aIookuSpyslFzrnvv2lmEWv5HyC1X79A=="],
+
+    "@types/node": ["@types/node@24.3.0", "", { "dependencies": { "undici-types": "~7.10.0" } }, "sha512-aPTXCrfwnDLj4VvXrm+UUCQjNEvJgNA8s5F1cvwQU+3KNltTOkBm1j30uNLyqqPNe7gE3KFzImYoZEfLhp4Yow=="],
+
+    "@types/react": ["@types/react@19.1.12", "", { "dependencies": { "csstype": "^3.0.2" } }, "sha512-cMoR+FoAf/Jyq6+Df2/Z41jISvGZZ2eTlnsaJRptmZ76Caldwy1odD4xTr/gNV9VLj0AWgg/nmkevIyUfIIq5w=="],
+
+    "bun-types": ["bun-types@1.2.21", "", { "dependencies": { "@types/node": "*" }, "peerDependencies": { "@types/react": "^19" } }, "sha512-sa2Tj77Ijc/NTLS0/Odjq/qngmEPZfbfnOERi0KRUYhT9R8M4VBioWVmMWE5GrYbKMc+5lVybXygLdibHaqVqw=="],
+
+    "commander": ["commander@12.1.0", "", {}, "sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA=="],
+
+    "csstype": ["csstype@3.1.3", "", {}, "sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw=="],
+
+    "undici-types": ["undici-types@7.10.0", "", {}, "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="],
+
+    "zod": ["zod@4.1.5", "", {}, "sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg=="],
   }
 }

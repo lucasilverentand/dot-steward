@@ -12,7 +12,5 @@
   },
   "files": ["src"],
   "sideEffects": false,
-  "dependencies": {
-    "@dot-steward/types": "workspace:*"
-  }
+  "dependencies": {}
 }
