@@ -22,6 +22,10 @@ export class BrewPlugin extends Plugin {
       await installHomebrewNonInteractive();
     }
   }
+
+  async validate(_ctx: HostContext): Promise<void> {
+    // No generic validation for the top-level brew plugin
+  }
 }
 
 export function brewPlugin(): BrewPlugin {

@@ -85,6 +85,8 @@ export abstract class Item implements ItemShape {
 
   // Lifecycle
   abstract probe(ctx: HostContext): Promise<ItemStatus>;
+  // Validate configuration/preconditions. Throw on invalid state.
+  abstract validate(ctx: HostContext): Promise<void>;
   abstract apply(ctx: HostContext): Promise<void>;
   cleanup(_ctx: HostContext): Promise<void> {
     return Promise.resolve();
@@ -104,7 +106,9 @@ export abstract class Item implements ItemShape {
       return { summary: `[skip] ${this.kind} ${name} (incompatible host)` };
     if (this._state.status === "applied")
       return { summary: `[noop] ${this.kind} ${name} (already applied)` };
-    return { summary: `[apply] ${this.kind} ${name}` };
+    // For planned application, omit the "[apply]" prefix; the CLI plan
+    // view renders a leading symbol instead.
+    return { summary: `${this.kind} ${name}` };
   }
 
   // State helpers

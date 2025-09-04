@@ -221,12 +221,15 @@ export class Manager {
   > {
     await this.events.emit("manager:plan_start");
     const items = this.topo_items();
+    // Track items that failed validation so we can skip their dependents.
+    const invalid = new Set<string>();
     const decisions: Array<{
       item: Item;
       action: "apply" | "skip" | "noop";
       reason?: string;
       details?: import("./item.ts").ItemPlan | null;
     }> = [];
+    const errors: Array<{ id: string; error: string }> = [];
     let toApply = 0;
     let skipped = 0;
     let noop = 0;
@@ -238,19 +241,32 @@ export class Manager {
         }
       ).matches;
       const compatible = matches ? this.host.evaluateMatch(matches) : true;
+      const blockedByInvalidDep = it.requires?.some((dep) => invalid.has(dep));
       let action: "apply" | "skip" | "noop";
       let reason: string | undefined;
       if (!compatible) {
         action = "skip";
         reason = "incompatible host";
-        skipped++;
+      } else if (blockedByInvalidDep) {
+        action = "skip";
+        reason = "blocked: invalid dependency";
       } else if (it.state.status === "applied") {
         action = "noop";
         reason = "already applied";
-        noop++;
       } else {
         action = "apply";
-        toApply++;
+      }
+      // Validate item configuration/preconditions during plan stage
+      try {
+        // Only validate when we intend to apply (i.e., compatible and not blocked)
+        if (action === "apply") await it.validate(this.host);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push({ id: it.id, error: msg });
+        invalid.add(it.id);
+        // Mark decision as skipped with reason; still attempt to render plan summary
+        action = "skip";
+        reason = `invalid: ${msg}`;
       }
       let details: import("./item.ts").ItemPlan | null | undefined;
       try {
@@ -259,6 +275,10 @@ export class Manager {
         details = undefined;
       }
       decisions.push({ item: it, action, reason, details });
+      // Count after final action is determined
+      if (action === "apply") toApply++;
+      else if (action === "noop") noop++;
+      else if (action === "skip") skipped++;
       await this.events.emit("item:plan_decision", {
         item_id: it.id,
         kind: it.kind,
@@ -311,6 +331,8 @@ export class Manager {
           });
           continue;
         }
+        // Validate preconditions before applying
+        await it.validate(this.host);
         await it.apply(this.host);
         // Mark applied on success
         it.set_status("applied");

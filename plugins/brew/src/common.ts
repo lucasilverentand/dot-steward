@@ -76,6 +76,23 @@ export async function brewExecOk(args: string[]): Promise<boolean> {
   return execOk(cmd, args);
 }
 
+export async function brewInfoOk(
+  kind: "formula" | "cask",
+  name: string,
+): Promise<boolean> {
+  const cmd = await findBrewCmd();
+  if (!cmd) return false;
+  const args = ["info", kind === "cask" ? "--cask" : "--formula", name];
+  return execOk(cmd, args, { timeoutMs: 30_000 });
+}
+
+export async function brewTapExists(tap: string): Promise<boolean> {
+  const cmd = await findBrewCmd();
+  if (!cmd) return false;
+  // tap-info returns non-zero when tap doesn't exist
+  return execOk(cmd, ["tap-info", tap], { timeoutMs: 30_000 });
+}
+
 export async function brewExec(
   args: string[],
   opts?: { timeoutMs?: number },

@@ -27,4 +27,8 @@ export abstract class Plugin extends Item {
     this.name = name;
     this.matches = matches;
   }
+
+  async validate(_ctx: import("./host/context.ts").HostContext): Promise<void> {
+    // Plugins can override if they need config validation.
+  }
 }

@@ -26,21 +26,6 @@ export function registerAnalyze(program: Command): void {
     .action(async (opts: { config: string }) => {
       const mgr = new Manager();
       const cfgUrl = resolveConfigToFileUrl(opts.config);
-      // Subscribe to events for progress output
-      const short = (id: string) => id.slice(0, 8);
-      const itemRef = (p: { kind: string; name?: string; item_id: string }) =>
-        `[${p.kind}] ${p.name ?? short(p.item_id)}`;
-      const offs = [
-        mgr.events.on("item:probe_start", (e) => {
-          console.log(`probe: ${itemRef(e)}`);
-        }),
-        mgr.events.on("item:probe_done", (e) => {
-          console.log(`probe: ${itemRef(e)} status=${e.status ?? "unknown"}`);
-        }),
-        mgr.events.on("item:probe_error", (e) => {
-          console.log(`probe: ${itemRef(e)} error=${e.error}`);
-        }),
-      ];
       try {
         await mgr.init(cfgUrl);
       } catch (err) {
@@ -241,12 +226,15 @@ export function registerAnalyze(program: Command): void {
           dimItems: true,
         }),
       );
+      // Spacer after Plugins list
+      console.log("");
 
       // Profiles: one box per profile with essential details
       if (mgr.profiles.length === 0) {
         console.log(
           renderListBox(["none"], { title: "Profiles", dimItems: true }),
         );
+        console.log("");
       } else {
         for (const p of mgr.profiles) {
           const matched = hc.evaluateMatch(p.matches);
@@ -254,24 +242,29 @@ export function registerAnalyze(program: Command): void {
           rows.push(["Matched", matched ? "yes" : "no"]);
           rows.push(["Match", renderMatchFlow(p.matches, 44)]);
           const footer = p.items.map((it) => it.render());
+          const DIM = "\x1b[2m";
+          const BOLD = "\x1b[1m";
+          const RESET = "\x1b[0m";
+          const title = `${DIM}profile:${RESET}${BOLD}${p.name}${RESET}`;
           console.log(
             renderKeyValueBox(rows, {
               padding: 1,
               gap: 2,
               dimLabels: true,
-              title: p.render(),
+              title,
               maxWidth: 70,
               valueMax: 44,
               labelMax: 10,
               footerLines: footer,
             }),
           );
+          // Blank line after each profile box
+          console.log("");
         }
       }
 
       // (removed) Items: full list across profiles
 
-      // Unsubscribe listeners at the end of command
-      for (const off of offs) off();
+      // Done
     });
 }

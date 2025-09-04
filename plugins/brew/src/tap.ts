@@ -1,6 +1,7 @@
 import { Item, type ItemStatus } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import { BREW_MATCH, brewExec, execCapture, findBrewCmd } from "./common.ts";
+import { BrewFormula } from "./formula.ts";
 import { BrewPlugin } from "./plugin.ts";
 
 export class BrewTap extends Item {
@@ -46,8 +47,31 @@ export class BrewTap extends Item {
     await brewExec(["tap", this.tap], { timeoutMs: 5 * 60_000 });
   }
 
+  async validate(_ctx: HostContext): Promise<void> {
+    // Validate the tap identifier shape (owner/repo). Existence is handled by apply().
+    if (!/^[^/]+\/[^/]+$/.test(this.tap)) {
+      throw new Error(`invalid brew tap name: ${this.tap}`);
+    }
+  }
+
   render(): string {
     return `[brew:tap] ${this.tap}`;
+  }
+
+  // Convenience creators that ensure dependency ordering and namespacing
+  formula(name: string) {
+    const fq = name.includes("/") ? name : `${this.tap}/${name}`;
+    return new BrewFormula(fq, { plugin: this.plugin, tap: this });
+  }
+
+  cask(name: string, opts?: { flags?: string[] }) {
+    const fq = name.includes("/") ? name : `${this.tap}/${name}`;
+    return new BrewFormula(fq, {
+      plugin: this.plugin,
+      tap: this,
+      kind: "cask",
+      flags: opts?.flags,
+    });
   }
 }
 

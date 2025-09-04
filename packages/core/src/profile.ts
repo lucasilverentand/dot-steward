@@ -37,6 +37,10 @@ export class Profile extends Item {
     return this.state.status;
   }
 
+  async validate(_ctx: import("./host/context.ts").HostContext): Promise<void> {
+    // Profiles are containers; no validation needed by default.
+  }
+
   async apply(_ctx: import("./host/context.ts").HostContext): Promise<void> {
     // Profiles group items; application orchestration can be handled elsewhere.
   }
