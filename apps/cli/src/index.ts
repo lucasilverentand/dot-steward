@@ -1,15 +1,10 @@
-import { DotFileManager, computePlanHash } from "@dot-steward/core";
+import { DotFileManager, computePlanHash, HostContext } from "@dot-steward/core";
 import type { ManagerConfig } from "@dot-steward/core";
-import type {
-  AnalyzeReport,
-  Plan,
-  ApplyReport,
-  ActionNode,
-  Diff,
-} from "@dot-steward/types";
+import type { AnalyzeReport, Plan, ApplyReport, ActionNode } from "@dot-steward/core";
 import { pathToFileURL } from "node:url";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import pc from "picocolors";
 
 type Args = {
@@ -121,6 +116,15 @@ function saveApplyToState(plan: Plan, report: ApplyReport) {
   const inventory = plan.nodes
     .filter((n) => n.action !== "destroy")
     .map((n) => ({ itemId: n.itemId, pluginId: n.pluginId, capabilityId: n.capabilityId, kind: (n.metadata as any)?.kind as string | undefined }));
+  // Persist a compact dependency map (itemId -> string[] of deps)
+  const deps: Record<string, string[]> = {};
+  for (const e of plan.edges) {
+    if (e.type !== "dep") continue;
+    // map node ids back to item ids
+    const fromItem = e.from.startsWith("node:") ? e.from.slice("node:".length) : e.from;
+    const toItem = e.to.startsWith("node:") ? e.to.slice("node:".length) : e.to;
+    deps[toItem] = [...(deps[toItem] ?? []), fromItem];
+  }
   writeJson(path.join(root, "state.json"), {
     lastApplyAt: new Date().toISOString(),
     planHash: plan.hash,
@@ -128,6 +132,7 @@ function saveApplyToState(plan: Plan, report: ApplyReport) {
     edges: plan.edges.length,
     summary: { ok, skipped, failed },
     items: inventory,
+    deps,
   });
 }
 
@@ -174,6 +179,41 @@ function loadInventoryFromState(): Map<string, InventoryItem> | undefined {
   return undefined;
 }
 
+type DepsMap = Map<string, string[]>;
+
+function loadPrevDepsFromState(): DepsMap | undefined {
+  try {
+    const root = stateRoot();
+    const s = path.join(root, "state.json");
+    if (fs.existsSync(s)) {
+      const state = readJson<{ deps?: Record<string, string[]> }>(s);
+      const rec = state.deps;
+      if (rec && typeof rec === "object") {
+        return new Map(Object.entries(rec).map(([k, v]) => [String(k), Array.isArray(v) ? v.map(String) : []] as const));
+      }
+    }
+  } catch {}
+  // Fallback to latest apply plan
+  try {
+    const latest = latestAppliesFile();
+    if (latest && fs.existsSync(latest)) {
+      const payload = readJson<{ plan?: Plan }>(latest);
+      const plan = payload.plan;
+      if (plan && Array.isArray(plan.edges)) {
+        const deps = new Map<string, string[]>();
+        for (const e of plan.edges) {
+          if (e.type !== "dep") continue;
+          const fromItem = e.from.startsWith("node:") ? e.from.slice("node:".length) : e.from;
+          const toItem = e.to.startsWith("node:") ? e.to.slice("node:".length) : e.to;
+          deps.set(toItem, [...(deps.get(toItem) ?? []), fromItem]);
+        }
+        return deps;
+      }
+    }
+  } catch {}
+  return undefined;
+}
+
 function augmentWithDestroys(current: Plan): Plan {
   const prev = loadInventoryFromState();
   if (!prev) return current;
@@ -183,41 +223,42 @@ function augmentWithDestroys(current: Plan): Plan {
 
   const destroyNodes: ActionNode[] = [];
   for (const id of toDestroy) {
-    const changePath = id;
-    const diff: Diff = {
-      current: "present",
-      desired: null,
-      idempotent: true,
-      changes: [
-        {
-          path: String(changePath),
-          from: "present",
-          to: undefined,
-        } as unknown as NonNullable<Diff["changes"]>[number],
-      ],
-    } as Diff;
     destroyNodes.push({
       id: `node:${id}:destroy`,
       itemId: id,
       pluginId: prev.get(id)?.pluginId,
       capabilityId: prev.get(id)?.capabilityId,
       action: "destroy",
-      diff,
+      state: undefined,
       locks: [],
       metadata: { kind: prev.get(id)?.kind ?? "unknown" },
     });
   }
+  // Build dependency edges among destroy nodes from previously persisted deps
+  const prevDeps = loadPrevDepsFromState();
+  const destroySet = new Set(toDestroy);
+  const newEdges: Plan["edges"] = [];
+  if (prevDeps) {
+    for (const item of toDestroy) {
+      const deps = prevDeps.get(item) ?? [];
+      for (const dep of deps) {
+        if (destroySet.has(dep)) {
+          // Maintain same orientation (dep -> item) for destr nodes
+          newEdges.push({ from: `node:${dep}:destroy`, to: `node:${item}:destroy`, type: "dep" });
+        }
+      }
+    }
+  }
   const merged: Plan = {
     ...current,
     nodes: [...current.nodes, ...destroyNodes],
-    // edges unchanged; no new deps for destroys for now
+    edges: [...current.edges, ...newEdges],
   };
   // Recompute hash to reflect appended destroys (ignoring createdAt)
   merged.hash = computePlanHash({
     header: merged.header,
     nodes: merged.nodes,
     edges: merged.edges,
-    previews: merged.previews,
   });
   return merged;
 }
@@ -229,28 +270,28 @@ async function main() {
     console.log(`Usage:
   dot-steward analyze -c <config.ts>
   dot-steward plan -c <config.ts> [-o plan.json]
-  dot-steward apply -c <config.ts> | -p <plan.json>
-`);
+  dot-steward apply -c <config.ts> | -p <plan.json>`);
     process.exit(args.cmd === "help" ? 0 : 1);
   }
 
   try {
     if (args.cmd === "analyze") {
       const cfg = await loadConfig(args.config!);
-      const mgr = new DotFileManager();
-      const report = mgr.analyze(cfg);
+      // Do not probe or initialize host for analyze; just render config as-is
+      const summary = buildConfigSummary(cfg);
       if (args.json) {
-        console.log(JSON.stringify(report, null, 2));
+        console.log(JSON.stringify(summary, null, 2));
       } else {
-        renderAnalyze(report);
+        renderConfigSummary(summary);
       }
       return;
     }
 
     if (args.cmd === "plan") {
       const cfg = await loadConfig(args.config!);
-      const mgr = new DotFileManager();
-      const plan = augmentWithDestroys(mgr.plan(cfg));
+      cfg.host = cfg.host ?? (await HostContext.initialize());
+      const mgr = new DotFileManager().loadConfig(cfg);
+      const plan = augmentWithDestroys(await mgr.plan());
       // Always persist plan in workspace state
       savePlanToState(plan);
       if (args.out) {
@@ -260,7 +301,7 @@ async function main() {
       if (args.json && !args.out) {
         console.log(JSON.stringify(plan, null, 2));
       } else {
-        renderPlan(plan);
+        renderPlan(plan, cfg.host as HostContext | undefined);
       }
       return;
     }
@@ -268,11 +309,14 @@ async function main() {
     if (args.cmd === "apply") {
       const mgr = new DotFileManager();
       let plan: Plan;
+      let cfg: ManagerConfig | undefined;
       if (args.plan) {
         plan = readJson<Plan>(args.plan);
       } else if (args.config) {
-        const cfg = await loadConfig(args.config);
-        plan = augmentWithDestroys(mgr.plan(cfg));
+        cfg = await loadConfig(args.config);
+        cfg.host = cfg.host ?? (await HostContext.initialize());
+        mgr.loadConfig(cfg);
+        plan = augmentWithDestroys(await mgr.plan());
         savePlanToState(plan);
       } else {
         throw new Error("apply requires either --plan or --config");
@@ -300,7 +344,7 @@ if ((import.meta as any).main) {
 export {};
 
 function heading(title: string) {
-  console.log(pc.bold(pc.cyan(`\n› ${title}`)));
+  console.log(pc.bold(pc.cyan(`› ${title}`)));
 }
 
 function renderAnalyze(r: AnalyzeReport) {
@@ -324,56 +368,279 @@ function renderAnalyze(r: AnalyzeReport) {
   }
 }
 
-function renderPlan(plan: Plan) {
+// Config summary (side-effect free) -----------------------------------------
+
+type ConfigSummary = {
+  plugins: {
+    id: string;
+    description?: string;
+    version?: string;
+    capabilities: { id: string; provides: string[]; description?: string }[];
+  }[];
+  profiles: {
+    name: string;
+    priority?: number;
+    includes?: string[];
+    variables?: Record<string, string>;
+    apps?: (string | { name: string })[];
+    plugins?: (string | { id: string })[];
+    match?: unknown;
+    items: {
+      id: string;
+      kind: string;
+      owner?: string;
+      deps?: string[];
+      spec?: unknown;
+      metadataKeys?: string[];
+    }[];
+  }[];
+};
+
+function buildConfigSummary(cfg: ManagerConfig): ConfigSummary {
+  const pluginSummaries: ConfigSummary["plugins"] = [];
+  for (const p of cfg.plugins ?? []) {
+    try {
+      // Best-effort read from manifest; avoid calling any functions
+      const manifest = (p as unknown as { manifest?: unknown }).manifest as
+        | {
+            id?: string;
+            version?: string;
+            description?: string;
+            capabilities?: { id?: string; provides?: unknown; description?: string }[];
+          }
+        | undefined;
+      if (!manifest) continue;
+      pluginSummaries.push({
+        id: String(manifest.id ?? "<unknown>"),
+        description: manifest.description,
+        version: manifest.version,
+        capabilities: (manifest.capabilities ?? []).map((c) => ({
+          id: String(c.id ?? "<unknown>"),
+          provides: Array.isArray(c.provides)
+            ? (c.provides as unknown[]).map((x) => String(x))
+            : [],
+          description: c.description,
+        })),
+      });
+    } catch {
+      // ignore plugin shape errors
+    }
+  }
+
+  const profileSummaries: ConfigSummary["profiles"] = [];
+  for (const p of cfg.profiles ?? []) {
+    const items = (p.items ?? []).map((it) => ({
+      id: String((it as { id?: unknown }).id ?? ""),
+      kind: String((it as { kind?: unknown }).kind ?? ""),
+      owner: (it as { owner?: unknown }).owner as string | undefined,
+      deps: ((it as { deps?: unknown }).deps as string[] | undefined) ?? undefined,
+      spec: (it as { spec?: unknown }).spec,
+      metadataKeys: Object.keys(((it as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<string, unknown>),
+      // Pass through optional item renderer when available
+      render: (it as unknown as { render?: (opts?: { includeOwner?: boolean; includeDeps?: boolean }) => string }).render,
+    }));
+    profileSummaries.push({
+      name: (p as { name: string }).name,
+      priority: (p as { priority?: number }).priority,
+      includes: (p as { includes?: string[] }).includes,
+      variables: (p as { variables?: Record<string, string> }).variables,
+      apps: (p as { apps?: (string | { name: string })[] }).apps,
+      plugins: (p as { plugins?: (string | { id: string })[] }).plugins,
+      match: (p as { match?: unknown }).match,
+      items,
+    });
+  }
+
+  return {
+    plugins: pluginSummaries,
+    profiles: profileSummaries,
+  };
+}
+
+function renderConfigSummary(summary: ConfigSummary) {
+  heading("Analyze Config");
+  // Plugins
+  console.log(`${pc.bold("Plugins")} — ${summary.plugins.length || 0}`);
+  if (!summary.plugins.length) {
+    console.log(pc.dim("  (none)"));
+  } else {
+    for (const p of summary.plugins) {
+      const caps = p.capabilities.map((c) => `${c.id}${c.provides.length ? pc.dim(` [${c.provides.join(", ")}]`) : ""}`).join(pc.dim(", "));
+      const desc = p.description ? ` — ${pc.dim(p.description)}` : "";
+      const ver = p.version ? pc.dim(` v${p.version}`) : "";
+      console.log(`  • ${pc.bold(p.id)}${ver}${desc}`);
+      if (p.capabilities.length) console.log(`     ${pc.dim("caps:")} ${caps}`);
+    }
+  }
+
+  // Profiles
+  console.log("");
+  console.log(`${pc.bold("Profiles")} — ${summary.profiles.length || 0}`);
+  if (!summary.profiles.length) {
+    console.log(pc.dim("  (none)"));
+  } else {
+    for (const prof of summary.profiles) {
+      const counts: string[] = [];
+      const items = prof.items?.length ?? 0;
+      const apps = prof.apps?.length ?? 0;
+      const plugs = prof.plugins?.length ?? 0;
+      if (items) counts.push(`${items} item${items === 1 ? "" : "s"}`);
+      if (apps) counts.push(`${apps} app${apps === 1 ? "" : "s"}`);
+      if (plugs) counts.push(`${plugs} plugin${plugs === 1 ? "" : "s"}`);
+      const metaParts: string[] = [];
+      if (typeof prof.priority === "number") metaParts.push(`prio ${prof.priority}`);
+      if (prof.includes?.length) metaParts.push(`includes: ${prof.includes.join(", ")}`);
+      console.log(`  • ${pc.bold(prof.name)}${metaParts.length ? pc.dim(` (${metaParts.join(", ")})`) : ""}${counts.length ? ` — ${counts.join(", ")}` : ""}`);
+      if (prof.match) console.log(`     ${pc.dim("match:")} ${formatMatcher(prof.match)}`);
+      if (prof.variables && Object.keys(prof.variables).length) {
+        const vars = Object.entries(prof.variables)
+          .map(([k, v]) => `${k}=${String(v)}`)
+          .join(pc.dim(", "));
+        console.log(`     ${pc.dim("vars:")} ${vars}`);
+      }
+      if (prof.plugins?.length) {
+        const listed = prof.plugins
+          .map((x) => (typeof x === "string" ? x : x?.id ?? ""))
+          .filter(Boolean)
+          .join(pc.dim(", "));
+        console.log(`     ${pc.dim("plugins:")} ${listed}`);
+      }
+      if (prof.items?.length) {
+        for (const it of prof.items) {
+          console.log(`     - ${formatItem(it)}`);
+        }
+      }
+    }
+  }
+}
+
+function formatItem(it: { id: string; kind: string; owner?: string; deps?: string[]; spec?: unknown; metadataKeys?: string[]; render?: (opts?: { includeOwner?: boolean; includeDeps?: boolean }) => string }): string {
+  try {
+    if (typeof it.render === "function") {
+      // Prefer item's own renderer when available
+      return it.render({ includeOwner: true, includeDeps: true });
+    }
+  } catch {}
+  const target = formatTarget(it.id);
+  const owner = it.owner ? pc.dim(` owner:${it.owner}`) : "";
+  const deps = it.deps?.length ? pc.dim(` deps:${it.deps.length}`) : "";
+  const spec = summarizeSpec(it.spec);
+  const details = [spec, owner, deps].filter(Boolean).join(" ");
+  return `${target}${details ? ` ${details}` : ""}`;
+}
+
+function summarizeSpec(spec: unknown): string | "" {
+  if (spec == null) return "";
+  if (typeof spec === "string" || typeof spec === "number" || typeof spec === "boolean") {
+    return pc.dim(`spec:${String(spec)}`);
+  }
+  if (typeof spec === "object") {
+    const o = spec as Record<string, unknown>;
+    if (typeof o.name === "string") {
+      const ver = typeof o.version === "string" ? `@${o.version}` : "";
+      return pc.dim(`spec:${o.name}${ver}`);
+    }
+    const keys = Object.keys(o);
+    if (keys.length === 0) return pc.dim("spec:{}");
+    return pc.dim(`spec:{${keys.slice(0, 3).join(", ")}${keys.length > 3 ? ", …" : ""}}`);
+  }
+  return pc.dim("spec:<unknown>");
+}
+
+function formatMatcher(m: unknown): string {
+  try {
+    const mm = m as Record<string, unknown>;
+    const parts: string[] = [];
+    // Predicates
+    if (mm.os) parts.push(`os:${fmtVal(mm.os)}`);
+    if (mm.distro) parts.push(`distro:${fmtVal(mm.distro)}`);
+    if (mm.arch) parts.push(`arch:${fmtVal(mm.arch)}`);
+    if (mm.user) parts.push(`user:${fmtVal(mm.user)}`);
+    if (mm.hostname) parts.push(`host:${fmtVal(mm.hostname)}`);
+    if (mm.env && typeof mm.env === "object") {
+      const env = Object.entries(mm.env as Record<string, unknown>)
+        .map(([k, v]) => `${k}=${String(v)}`)
+        .join(", ");
+      parts.push(`env:{${env}}`);
+    }
+    if (typeof mm.container === "boolean") parts.push(`container:${mm.container}`);
+    if (mm.virtualization) parts.push(`virt:${fmtVal(mm.virtualization)}`);
+    // Composition (wrap recursively)
+    const comp: string[] = [];
+    if (Array.isArray(mm.all)) comp.push(`all(${(mm.all as unknown[]).map(formatMatcher).join(pc.dim(", "))})`);
+    if (Array.isArray(mm.any)) comp.push(`any(${(mm.any as unknown[]).map(formatMatcher).join(pc.dim(", "))})`);
+    if (mm.not) comp.push(`not(${formatMatcher(mm.not)})`);
+    return [...comp, ...parts].join(pc.dim(" ; ")) || pc.dim("<none>");
+  } catch {
+    return pc.dim("<invalid matcher>");
+  }
+}
+
+function fmtVal(v: unknown): string {
+  if (Array.isArray(v)) return v.map((x) => String(x)).join("|");
+  return String(v);
+}
+
+function renderPlan(plan: Plan, host?: HostContext) {
   heading("Plan");
-  console.log(`${pc.green("✔")} ${pc.bold("Hash")} ${pc.dim(plan.hash)}`);
-  console.log(`${pc.blue("•")} ${pc.bold("Nodes")} ${plan.nodes.length}   ${pc.blue("•")} ${pc.bold("Edges")} ${plan.edges.length}`);
 
-  const changes = plan.nodes
-    .filter((n) => Array.isArray(n.diff?.changes) && (n.diff?.changes as unknown[]).length > 0)
-    .map((n) => ({ node: n, change: (n.diff.changes as any[])[0] as { path?: string; from?: unknown; to?: unknown } }))
-    .map(({ node, change }) => ({ node, change, kind: classifyChange(change) }));
+  // Host context (one blank line above and below)
+  if (host) {
+    console.log("");
+    const text = host.renderCli();
+    if (text) console.log(text);
+  }
 
-  if (changes.length === 0) {
-    console.log(pc.dim("No changes required."));
+  // Show legend with dimmed separators (ensure exactly one blank line above and below overall)
+  console.log("");
+  console.log(`${pc.green("+")} ensure ${pc.dim("|")} ${pc.yellow("~")} update ${pc.dim("|")} ${pc.red("!")} destroy ${pc.dim("|")} ${pc.dim("-")} noop`);
+  console.log("");
+
+  if (plan.nodes.length === 0) {
+    console.log(pc.dim("No items."));
     return;
   }
 
-  const add = changes.filter((c) => c.kind === "add").length;
-  const upd = changes.filter((c) => c.kind === "change").length;
-  const del = changes.filter((c) => c.kind === "destroy").length;
+  // No items header; list follows directly, grouped by profile
+  let ensure = 0, update = 0, del = 0, noop = 0;
 
-  console.log("\nResource actions are indicated with the following symbols:");
-  console.log(`  ${pc.green("+")} create`);
-  console.log(`  ${pc.yellow("~")} update`);
-  console.log(`  ${pc.red("-")} destroy`);
-
-  console.log("\nDot Steward will perform the following actions:\n");
-  for (const { node, change, kind } of changes) {
-    const sym = kind === "add" ? pc.green("+") : kind === "destroy" ? pc.red("-") : pc.yellow("~");
-    const verb = kind === "add" ? "created" : kind === "destroy" ? "destroyed" : "updated";
-    const target = formatTarget(change?.path ?? node.itemId);
-    console.log(`  # ${target} will be ${verb}`);
-    console.log(`  ${sym} ${target} ${pc.dim(`(plugin: ${node.pluginId ?? "-"}${node.capabilityId ? `, capability: ${node.capabilityId}` : ""})`)}`);
-    if (kind === "change" && change && change.from !== undefined && change.to !== undefined && change.from !== change.to) {
-      console.log(`      ${pc.dim(String(change.from))} -> ${pc.dim(String(change.to))}`);
+  const byProfile = new Map<string, typeof plan.nodes>();
+  for (const n of plan.nodes) {
+    const prof = (n.metadata as any)?.profile as string | undefined;
+    const key = prof ?? "(ungrouped)";
+    const arr = byProfile.get(key) ?? [];
+    arr.push(n);
+    byProfile.set(key, arr);
+  }
+  const order = [...(plan.header.profiles ?? []), ...Array.from(byProfile.keys()).filter((k) => !(plan.header.profiles ?? []).includes(k))];
+  for (const prof of order) {
+    const nodes = byProfile.get(prof);
+    if (!nodes || nodes.length === 0) continue;
+    console.log(pc.bold(prof));
+    for (const node of nodes) {
+      const kind = node.action === "destroy"
+        ? "delete"
+        : node.action === "noop"
+        ? "none"
+        : node.action === "update"
+        ? "update"
+        : "ensure";
+      if (kind === "ensure") ensure++; else if (kind === "update") update++; else if (kind === "delete") del++; else noop++;
+      const sym =
+        kind === "ensure" ? pc.green("+") :
+        kind === "update" ? pc.yellow("~") :
+        kind === "delete" ? pc.red("!") : pc.dim("-");
+      const target = formatTarget(node.itemId);
+      console.log(`${sym} ${target} ${pc.dim(`(plugin: ${node.pluginId ?? "-"}${node.capabilityId ? `, capability: ${node.capabilityId}` : ""})`)}`);
     }
-    console.log("");
   }
 
-  console.log(pc.bold(`Plan: ${pc.green(`${add} to add`)}, ${pc.yellow(`${upd} to change`)}, ${pc.red(`${del} to destroy`)}`));
+  console.log("");
+  console.log(
+    pc.bold(`${pc.green(`${ensure} to ensure`)}, ${pc.yellow(`${update} updated`)}, ${pc.red(`${del} deleted`)}, ${pc.dim(`${noop} no action`)}`),
+  );
 }
 
-function classifyChange(change: { from?: unknown; to?: unknown } | undefined): "add" | "change" | "destroy" {
-  if (!change) return "change";
-  const from = change.from;
-  const to = change.to;
-  const isNullish = (v: unknown) => v === undefined || v === null;
-  if (isNullish(from) && !isNullish(to)) return "add";
-  if (!isNullish(from) && isNullish(to)) return "destroy";
-  if (from !== to) return "change";
-  return "change";
-}
 
 function formatTarget(pathOrId: string): string {
   if (!pathOrId) return "<unknown>";
@@ -398,7 +665,7 @@ function renderApply(r: ApplyReport) {
     if (res.error) console.log(pc.red(`   → ${res.error}`));
   }
   console.log(
-    `\n${pc.bold("Summary")} — ${pc.green(`${ok} ok`)} · ${pc.yellow(`${skipped} skipped`)} · ${pc.red(`${failed} failed`)} · ${pc.dim(`${r.timings.totalMs}ms`)}`,
+    `${pc.green(`${ok} ok`)} · ${pc.yellow(`${skipped} skipped`)} · ${pc.red(`${failed} failed`)} · ${pc.dim(`${r.timings.totalMs}ms`)}`,
   );
 }
 

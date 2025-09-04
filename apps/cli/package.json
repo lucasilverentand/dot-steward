@@ -17,7 +17,6 @@
   "sideEffects": false,
   "dependencies": {
     "@dot-steward/core": "workspace:*",
-    "@dot-steward/types": "workspace:*",
     "picocolors": "^1.0.0"
   }
 }
