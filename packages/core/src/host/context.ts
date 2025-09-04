@@ -1,6 +1,8 @@
+import { spawnSync } from "node:child_process";
 import * as os from "node:os";
 import { z } from "zod";
 import type { HostMatchExpr } from "./matching.ts";
+import { evalMatchExpr } from "./matching.ts";
 
 export const HostOSSchema = z.enum([
   "linux", // Linux
@@ -81,73 +83,12 @@ export class HostContext implements HostContextShape {
     return this;
   }
 
-  // Evaluate a HostMatch expression against this context
+  // Evaluate a HostMatch expression against this context (delegates to matching.ts)
   evaluateMatch(expr: HostMatchExpr): boolean {
-    const toRegExp = (pattern: string, flags?: string): RegExp | null => {
-      try {
-        return new RegExp(pattern, flags);
-      } catch {
-        return null;
-      }
-    };
-
-    const evalExpr = (e: HostMatchExpr): boolean => {
-      switch (e.type) {
-        case "all":
-          return e.of.every((sub) => evalExpr(sub));
-        case "any":
-          return e.of.some((sub) => evalExpr(sub));
-        case "os":
-          return this.os !== null && e.values.includes(this.os);
-        case "arch":
-          return this.arch !== null && e.values.includes(this.arch);
-        case "hostname": {
-          const actual = os.hostname();
-          const v = e.value as unknown;
-          if (typeof v === "string") return actual === v;
-          const re = toRegExp(
-            (v as { matches: string; flags?: string }).matches,
-            (v as { matches: string; flags?: string }).flags,
-          );
-          return !!re && re.test(actual);
-        }
-        case "eq": {
-          const k = e.key;
-          const v = e.value as unknown;
-          if (k === "env.ci") return this.env.ci === v;
-          if (k === "env.devcontainer") return this.env.devcontainer === v;
-          if (k === "user.can_sudo") return this.user.can_sudo === v;
-          if (k === "user.is_root") return this.user.is_root === v;
-          const matchStr = (actual: string | null) => {
-            if (actual === null) return false;
-            if (typeof v === "string") return actual === v;
-            if (typeof v === "object" && v && "matches" in v) {
-              const re = toRegExp(
-                (v as { matches: string; flags?: string }).matches,
-                (v as { matches: string; flags?: string }).flags,
-              );
-              return !!re && re.test(actual);
-            }
-            return false;
-          };
-          if (k === "user.name") return matchStr(this.user.name);
-          if (k === "user.uid") return matchStr(this.user.uid);
-          if (k === "user.gid") return matchStr(this.user.gid);
-          if (k === "user.home") return matchStr(this.user.home);
-          return false;
-        }
-        case "env-var": {
-          const val = this.env.variables[e.name];
-          if (e.value === undefined) return val !== undefined;
-          if (typeof e.value === "string") return val === e.value;
-          if (typeof val !== "string") return false;
-          const re = toRegExp(e.value.matches, e.value.flags);
-          return !!re && re.test(val);
-        }
-      }
-    };
-
-    return evalExpr(expr);
+    return evalMatchExpr(
+      { os: this.os, arch: this.arch, env: this.env, user: this.user },
+      expr,
+    );
   }
 
   private async detectOS(): Promise<HostOS> {
@@ -197,8 +138,11 @@ export class HostContext implements HostContextShape {
 
   private async detectEnv(): Promise<HostEnv> {
     const variables: Record<string, string> = {};
+    const isWin = process.platform === "win32";
     for (const [key, val] of Object.entries(process.env)) {
-      if (typeof val === "string") variables[key] = val;
+      if (typeof val !== "string") continue;
+      const k = isWin ? key.toUpperCase() : key;
+      variables[k] = val;
     }
 
     const truthy = (v: string | undefined) =>
@@ -254,12 +198,30 @@ export class HostContext implements HostContextShape {
           ? homeCandidate
           : null;
 
+      // Best-effort sudo capability check (non-blocking)
+      let canSudo = false;
+      if (process.platform !== "win32") {
+        if (isRoot) {
+          canSudo = true;
+        } else {
+          try {
+            const res = spawnSync("sudo", ["-n", "true"], {
+              stdio: "ignore",
+              timeout: 300,
+            });
+            canSudo = res.status === 0;
+          } catch {
+            canSudo = false;
+          }
+        }
+      }
+
       const user: HostUser = {
         name,
         uid,
         gid,
         home,
-        can_sudo: isRoot,
+        can_sudo: canSudo,
         is_root: isRoot,
       };
 

@@ -15,10 +15,7 @@ export class BrewCask extends Item {
     opts?: { flags?: string[]; requires?: string[]; plugin?: BrewPlugin },
   ) {
     const plugin = opts?.plugin;
-    const reqs = [
-      ...(plugin ? [plugin.id] : []),
-      ...(opts?.requires ?? []),
-    ];
+    const reqs = [...(plugin ? [plugin.id] : []), ...(opts?.requires ?? [])];
     super({ kind: "brew:cask", requires: reqs });
     this.name = name;
     this.flags = opts?.flags ?? [];

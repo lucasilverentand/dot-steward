@@ -1,4 +1,4 @@
-import z from "zod";
+import { z } from "zod";
 import { type Profile, ProfileSchema } from "./profile.ts";
 
 export const ConfigSchema = z.object({

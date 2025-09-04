@@ -9,12 +9,12 @@ export class BrewFormula extends Item {
   readonly plugin?: BrewPlugin;
   readonly plugin_key = "brew";
 
-  constructor(name: string, opts?: { requires?: string[]; plugin?: BrewPlugin }) {
+  constructor(
+    name: string,
+    opts?: { requires?: string[]; plugin?: BrewPlugin },
+  ) {
     const plugin = opts?.plugin;
-    const reqs = [
-      ...(plugin ? [plugin.id] : []),
-      ...(opts?.requires ?? []),
-    ];
+    const reqs = [...(plugin ? [plugin.id] : []), ...(opts?.requires ?? [])];
     super({ kind: "brew:formula", requires: reqs });
     this.name = name;
     this.plugin = plugin;

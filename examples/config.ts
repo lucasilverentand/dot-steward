@@ -9,9 +9,7 @@ const mac_base = profile({
 const mac_dev = profile({
   name: "mac-dev",
   matches: all(os("darwin"), any(hostname("mac"), hostname("macbook"))),
-  items: [
-    brew.formula("some-formula"),
-  ],
+  items: [brew.formula("some-formula")],
 });
 
 export default config({

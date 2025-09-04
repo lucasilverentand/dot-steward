@@ -14,10 +14,7 @@ export class BrewTap extends Item {
     opts?: { requires?: string[]; plugin?: BrewPlugin },
   ) {
     const plugin = opts?.plugin;
-    const reqs = [
-      ...(plugin ? [plugin.id] : []),
-      ...(opts?.requires ?? []),
-    ];
+    const reqs = [...(plugin ? [plugin.id] : []), ...(opts?.requires ?? [])];
     super({ kind: "brew:tap", requires: reqs });
     this.tap = tap;
     this.plugin = plugin;

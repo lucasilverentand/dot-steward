@@ -1,4 +1,5 @@
 import type { Item } from "./item.ts";
+import { ItemSchema } from "./item.ts";
 
 export type DepEdge = { from: string; to: string };
 
@@ -9,7 +10,19 @@ export class DependencyGraph {
   readonly incoming: Map<string, Set<string>> = new Map();
 
   add_items(items: Item[]): this {
+    const dev = process.env.NODE_ENV !== "production";
     for (const it of items) {
+      if (dev) {
+        // Validate item shape in dev to catch schema mismatches early
+        try {
+          ItemSchema.parse(it);
+        } catch (err) {
+          const id = (it as { id?: string }).id ?? "<unknown>";
+          throw new Error(
+            `Invalid item ${id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       this.nodes.set(it.id, it);
       if (!this.outgoing.has(it.id)) this.outgoing.set(it.id, new Set());
       if (!this.incoming.has(it.id)) this.incoming.set(it.id, new Set());
@@ -56,8 +69,8 @@ export class DependencyGraph {
     if (!this.incoming.has(from)) this.incoming.set(from, new Set());
     if (!this.outgoing.has(to)) this.outgoing.set(to, new Set());
     if (!this.incoming.has(to)) this.incoming.set(to, new Set());
-    this.outgoing.get(from)!.add(to);
-    this.incoming.get(to)!.add(from);
+    this.outgoing.get(from)?.add(to);
+    this.incoming.get(to)?.add(from);
     return this;
   }
 

@@ -18,6 +18,10 @@ export class Profile extends Item {
     items: Item[] = [],
     opts?: { status?: ItemStatus },
   ) {
+    // Validate constructor inputs
+    z.object({ name: z.string().min(2).max(100), matches: HostMatchExprSchema })
+      .strict()
+      .parse({ name, matches });
     super({
       kind: "profile",
       state: opts?.status ? { status: opts.status } : undefined,
@@ -43,5 +47,13 @@ export function profile({
   matches,
   items,
 }: { name: string; matches: HostMatchExpr; items?: Item[] }): Profile {
+  // Validate factory inputs (user-facing)
+  z.object({
+    name: z.string().min(2).max(100),
+    matches: HostMatchExprSchema,
+    items: z.array(z.any()).optional(),
+  })
+    .strict()
+    .parse({ name, matches, items });
   return new Profile(name, matches, items ?? []);
 }

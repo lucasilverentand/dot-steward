@@ -22,7 +22,6 @@ export class BrewPlugin extends Plugin {
       await installHomebrewNonInteractive();
     }
   }
-
 }
 
 export function brewPlugin(): BrewPlugin {

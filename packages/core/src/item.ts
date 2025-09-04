@@ -15,7 +15,7 @@ export type ItemStatus = z.infer<typeof ItemStatusSchema>;
 
 export const ItemStateSchema = z.object({
   status: ItemStatusSchema,
-  waiting_on: z.array(z.uuidv4()).default([]),
+  waiting_on: z.array(z.string().uuid()).default([]),
   attempts: z.number().int().nonnegative().default(0),
   last_error: z.string().optional(),
 });
@@ -90,12 +90,28 @@ export abstract class Item implements ItemShape {
     return Promise.resolve();
   }
 
+  // Planning: default implementation returns a generic summary.
+  // Subclasses may override to provide detailed changes.
+  async plan(ctx: HostContext): Promise<ItemPlan | null> {
+    const matches = (
+      this as {
+        matches?: import("./host/matching.ts").HostMatchExpr;
+      }
+    ).matches;
+    const compatible = matches ? ctx.evaluateMatch(matches) : true;
+    const name = (this as { name?: string }).name ?? this.id.slice(0, 8);
+    if (!compatible)
+      return { summary: `[skip] ${this.kind} ${name} (incompatible host)` };
+    if (this._state.status === "applied")
+      return { summary: `[noop] ${this.kind} ${name} (already applied)` };
+    return { summary: `[apply] ${this.kind} ${name}` };
+  }
+
   // State helpers
   protected setState(patch: Partial<ItemState>): this {
     const next = {
       ...this._state,
       ...patch,
-      updated_at: new Date().toISOString(),
     };
     this._state = ItemStateSchema.parse(next);
     return this;

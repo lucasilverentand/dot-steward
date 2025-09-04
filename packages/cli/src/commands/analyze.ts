@@ -2,8 +2,12 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
 import type { HostMatchExpr } from "@dot-steward/core";
-import { renderKeyValueBox, renderListBox, renderKeyValueGridBox } from "../utils/table.ts";
 import type { Command } from "commander";
+import {
+  renderKeyValueBox,
+  renderKeyValueGridBox,
+  renderListBox,
+} from "../utils/table.ts";
 
 function resolveConfigToFileUrl(p: string): string {
   const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
@@ -119,19 +123,21 @@ export function registerAnalyze(program: Command): void {
             return `host:${
               typeof expr.value === "string"
                 ? expr.value
-                : `~${expr.value.matches}${expr.value.flags ? "/" + expr.value.flags : ""}`
+                : `~${expr.value.matches}${expr.value.flags ? `/${expr.value.flags}` : ""}`
             }`;
           case "eq": {
             const m = (key: string) => key.replace(/^user\./, "");
             const v = expr.value;
-            if (typeof v === "boolean") return `${m(expr.key)}:${v ? "true" : "false"}`;
+            if (typeof v === "boolean")
+              return `${m(expr.key)}:${v ? "true" : "false"}`;
             if (typeof v === "string") return `${m(expr.key)}:${v}`;
-            return `${m(expr.key)}:~${v.matches}${v.flags ? "/" + v.flags : ""}`;
+            return `${m(expr.key)}:~${v.matches}${v.flags ? `/${v.flags}` : ""}`;
           }
           case "env-var": {
             if (expr.value === undefined) return `env.${expr.name}`;
-            if (typeof expr.value === "string") return `env.${expr.name}:${expr.value}`;
-            return `env.${expr.name}:~${expr.value.matches}${expr.value.flags ? "/" + expr.value.flags : ""}`;
+            if (typeof expr.value === "string")
+              return `env.${expr.name}:${expr.value}`;
+            return `env.${expr.name}:~${expr.value.matches}${expr.value.flags ? `/${expr.value.flags}` : ""}`;
           }
         }
       };
@@ -143,7 +149,7 @@ export function registerAnalyze(program: Command): void {
           if (w <= 0) return "";
           if (s.length <= w) return s;
           if (w <= 1) return "…";
-          return s.slice(0, w - 1) + "…";
+          return `${s.slice(0, w - 1)}…`;
         };
         const labelFor = (e: HostMatchExpr): string => {
           switch (e.type) {
@@ -159,27 +165,37 @@ export function registerAnalyze(program: Command): void {
               return `host:${
                 typeof e.value === "string"
                   ? e.value
-                  : `~${e.value.matches}${e.value.flags ? "/" + e.value.flags : ""}`
+                  : `~${e.value.matches}${e.value.flags ? `/${e.value.flags}` : ""}`
               }`;
             case "eq": {
               const key = e.key.replace(/^user\./, "");
               const v = e.value;
-              if (typeof v === "boolean") return `${key}:${v ? "true" : "false"}`;
+              if (typeof v === "boolean")
+                return `${key}:${v ? "true" : "false"}`;
               if (typeof v === "string") return `${key}:${v}`;
-              return `${key}:~${v.matches}${v.flags ? "/" + v.flags : ""}`;
+              return `${key}:~${v.matches}${v.flags ? `/${v.flags}` : ""}`;
             }
             case "env-var": {
               if (e.value === undefined) return `env.${e.name}`;
-              if (typeof e.value === "string") return `env.${e.name}:${e.value}`;
-              return `env.${e.name}:~${e.value.matches}${e.value.flags ? "/" + e.value.flags : ""}`;
+              if (typeof e.value === "string")
+                return `env.${e.name}:${e.value}`;
+              return `env.${e.name}:~${e.value.matches}${e.value.flags ? `/${e.value.flags}` : ""}`;
             }
           }
         };
-        const walk = (e: HostMatchExpr, prefix: string, isLast: boolean, isRoot = false) => {
+        const walk = (
+          e: HostMatchExpr,
+          prefix: string,
+          isLast: boolean,
+          isRoot = false,
+        ) => {
           const branch = isRoot ? "" : isLast ? "└─ " : "├─ ";
           const nextPrefix = isRoot ? "" : isLast ? "   " : "│  ";
           const lab = labelFor(e);
-          const contentWidth = Math.max(1, maxWidth - prefix.length - branch.length);
+          const contentWidth = Math.max(
+            1,
+            maxWidth - prefix.length - branch.length,
+          );
           lines.push(prefix + branch + crop(lab, contentWidth));
           if (e.type === "all" || e.type === "any") {
             const arr = e.of;
@@ -228,7 +244,9 @@ export function registerAnalyze(program: Command): void {
 
       // Profiles: one box per profile with essential details
       if (mgr.profiles.length === 0) {
-        console.log(renderListBox(["none"], { title: "Profiles", dimItems: true }));
+        console.log(
+          renderListBox(["none"], { title: "Profiles", dimItems: true }),
+        );
       } else {
         for (const p of mgr.profiles) {
           const matched = hc.evaluateMatch(p.matches);

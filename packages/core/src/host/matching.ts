@@ -245,7 +245,10 @@ export function evalMatchExpr(
       return false;
     }
     case "env-var": {
-      const val = ctx.env.variables[expr.name];
+      const isWin =
+        typeof process !== "undefined" && process.platform === "win32";
+      const key = isWin ? expr.name.toUpperCase() : expr.name;
+      const val = ctx.env.variables[key];
       if (expr.value === undefined) return val !== undefined; // existence
       if (typeof expr.value === "string") return val === expr.value;
       if (typeof val !== "string") return false;
