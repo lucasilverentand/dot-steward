@@ -142,11 +142,13 @@ async function applyWithListr(
   mgr: Manager,
   planned: PlannedLabel[],
   opts: { skipUpdates?: boolean },
+  summaryCounts?: { plus: number; minus: number; tilde: number; bang?: number },
 ): Promise<void> {
   // Manual, clack-like live renderer (no Listr). We mirror the style used elsewhere.
   type Status = "pending" | "running" | "done" | "skip" | "error";
   type Row = { id: string; title: string; status: Status; note?: string };
   const rows: Row[] = planned.map((p) => ({ id: p.id, title: p.title, status: "pending" }));
+  const rowById = new Map<string, Row>(rows.map((r) => [r.id, r]));
 
   // Track completion and errors per item
   type Waiter = {
@@ -173,6 +175,8 @@ async function applyWithListr(
   const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let spinnerIdx = 0;
   let spinnerTimer: NodeJS.Timeout | null = null;
+  // Optional final summary footer to append after apply completes
+  let footerSummary: string | null = null;
 
   const symbol = (row: Row): string => {
     switch (row.status) {
@@ -194,9 +198,58 @@ async function applyWithListr(
     return `│  ${symbol(row)} ${row.title}${note}`;
   };
 
+  // Group rows by section: Plugins first, then per profile
+  type Section = { title: string; rows: Row[] };
+  const sections: Section[] = [];
+
+  // Map item.id -> profile name for ACTIVE profiles only
+  const idToProfile = new Map<string, string>();
+  for (const p of mgr.active_profiles) {
+    for (const it of p.items) idToProfile.set(it.id, p.name);
+  }
+
+  // Collect plugin rows
+  const pluginRows: Row[] = [];
+  for (const r of rows) {
+    const it = mgr.deps.nodes.get(r.id) as unknown as { kind?: string } | undefined;
+    if (it && it.kind === "plugin") pluginRows.push(r);
+  }
+  if (pluginRows.length > 0) sections.push({ title: "Plugins", rows: pluginRows });
+
+  // Collect per-profile rows (include only non-empty sections for live view)
+  for (const p of mgr.profiles) {
+    const matched = mgr.active_profiles.includes(p);
+    const profRows: Row[] = [];
+    for (const it of p.items) {
+      const r = rowById.get(it.id);
+      if (r) profRows.push(r);
+    }
+    if (profRows.length > 0) {
+      const matchNote = matched ? pc.green("✓ match") : pc.dim("✗ no match");
+      const title = `Profile: ${p.name}  ${matchNote}`;
+      sections.push({ title, rows: profRows });
+    }
+  }
+
   const draw = () => {
     const header = "◆  Apply";
-    const lines = ["│", header, "│", ...rows.map(formatLine), "└"];
+    const lines: string[] = ["│", header, "│"];
+    if (sections.length === 0) {
+      // Fallback to flat list
+      lines.push(...rows.map(formatLine));
+    } else {
+      sections.forEach((sec, idx) => {
+        lines.push(`├─ ${sec.title}`);
+        for (const r of sec.rows) lines.push(formatLine(r));
+        if (idx < sections.length - 1) lines.push("│"); // spacer between sections
+      });
+    }
+    if (footerSummary) {
+      lines.push("│");
+      lines.push(`╰─  ${footerSummary}`);
+    } else {
+      lines.push("└");
+    }
     if (isTTY && printedLines > 0) {
       stdout.write(`\x1b[${printedLines}A\x1b[J`);
     }
@@ -282,7 +335,18 @@ async function applyWithListr(
   // Wait for all items to settle and for apply to finish
   await Promise.allSettled([applyPromise, ...[...waiters.values()].map((w) => w.promise)]);
   stopSpinner();
-  // Final redraw to ensure finished state is printed
+  // Build final footer summary line to mirror plan preview summary
+  try {
+    const plus = summaryCounts?.plus ?? rows.filter((r) => r.status === "done").length;
+    const minus = summaryCounts?.minus ?? 0;
+    const tilde = summaryCounts?.tilde ?? rows.filter((r) => r.status === "skip").length;
+    const bang = summaryCounts?.bang ?? 0;
+    const sep = ` ${pc.dim("|")} `;
+    footerSummary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+  } catch {
+    footerSummary = null;
+  }
+  // Final redraw to ensure finished state is printed (with summary)
   if (isTTY) draw();
   if (applyErr) throw applyErr;
 }
@@ -327,63 +391,34 @@ export function registerApply(program: Command): void {
         last.host.arch === mgr.host.arch &&
         last.host.home === mgr.host.user.home
       ) {
-        // First, show Host Details panel before asking
-        const envFlags = [
-          mgr.host.env.ci ? "ci" : "not ci",
-          mgr.host.env.devcontainer ? "devcontainer" : "not devcontainer",
-        ].join(", ");
-        const userName = String(mgr.host.user.name ?? "-");
-        const uidStr = String(mgr.host.user.uid ?? "-");
-        const gidStr = String(mgr.host.user.gid ?? "-");
-        const homeStr = String(mgr.host.user.home ?? "-");
-        const userLine = `${userName} (gid: ${gidStr}, uid: ${uidStr}, home: ${homeStr})`;
-        const hostLines: Array<[string, string]> = [
-          ["Hostname", String(mgr.host.hostname ?? "-")],
-          ["OS", String(mgr.host.os ?? "-")],
-          ["Arch", String(mgr.host.arch ?? "-")],
-          ["Shell", String(mgr.host.env.variables.SHELL ?? "-")],
-          ["Env", envFlags],
-          ["User", userLine],
-        ];
-        const labelWidth = Math.max(0, ...hostLines.map(([k]) => String(k).length));
-        const hostPanelLines = hostLines.map(([k, v]) => {
-          const label = String(k).padStart(labelWidth, " ");
-          return `${pc.dim(label)}  ${v}`;
-        });
-        // Render Host Details but omit the closing corner to flow into the prompt
-        {
-          const panel = renderPanelSections([{ title: "Host Details", lines: hostPanelLines }]);
-          const out = panel.split("\n");
-          if (out.length > 0 && out[out.length - 1].trim() === "└") out.pop();
-          logger.log(out.join("\n"));
-        }
-
-        // Prompt: use last plan?
+        // Prompt only; do not reprint Host Details when using a saved plan
         useSavedPlan = await askConfirm("Load plan from plan mode?");
       }
 
       let result: ApplyResult | null = null;
       // Track whether we showed live progress (so we can avoid duplicate final summary)
       let usedLiveRenderer = false;
+      // Track whether we actually performed an apply (user confirmed)
+      let actuallyApplied = false;
       type Decisions = Awaited<ReturnType<typeof mgr.plan>>;
       let decisions: Decisions | null = null;
 
       // Styling via picocolors (pc)
       if (useSavedPlan && last) {
+        // Reconstruct all saved decisions once; use for preview and apply
+        const reconstructed: PlanDecision[] = await reconstructSavedDecisions(
+          mgr,
+          last.decisions,
+        );
         // Use saved plan for display; still run analyze+apply freshly
         // (analyze step removed)
         // Print the old (saved) plan for confirmation, matching `plan` formatting
         {
-          // Reconstruct all saved decisions and render with the same sections/tree
-          const reconstructed: PlanDecision[] = reconstructSavedDecisions(
-            mgr,
-            last.decisions,
-          );
           // Plan preview sections/tree
           const planSections = buildPlanSections(mgr, reconstructed);
           const legendLine = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
           const planLines = [legendLine, "", ...renderTreeSubsections(planSections)];
-          // We already showed Host Details above alongside the reuse prompt;
+          // When reusing a saved plan, we intentionally skip Host Details;
           // only render the confirmation panel here.
           const panel = renderPanelSections([
             { title: "Plan", lines: planLines },
@@ -398,7 +433,7 @@ export function registerApply(program: Command): void {
           if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
             linesOut.pop();
             linesOut.push("│");
-            // Use rounded-corner with horizontal for final plan summary
+            // In apply mode, show branch to indicate follow-up prompt
             linesOut.push(`├─  ${summary}`);
           }
           logger.log(linesOut.join("\n"));
@@ -406,7 +441,9 @@ export function registerApply(program: Command): void {
         // Confirm apply using the saved plan preview above
         const proceed = await askConfirm("Apply this plan?");
         if (!proceed) {
-          logger.log(pc.dim("Aborted. No changes applied."));
+          // Add a spacer line with the gutter before the aborted message
+          logger.log("│");
+          logger.log(`╰─  ${pc.dim("Aborted. No changes applied.")}`);
           // Use reconstructed decisions to build a pseudo-result for summary
           result = {
             plan: reconstructed,
@@ -420,20 +457,28 @@ export function registerApply(program: Command): void {
           };
         } else {
           // Apply using saved planned items with live progress
-          const plannedList = last.decisions
+          const plannedList = reconstructed
             .filter((d) => d.action === "apply")
-            .map((d) => {
-              const it = mgr.deps.nodes.get(d.item_id);
-              const label = it ? it.render() : d.summary ?? d.item_id;
-              return { id: d.item_id, title: label };
-            });
+            .map((d) => ({
+              id: d.item.id,
+              title: d.details?.summary ?? d.item.render(),
+            }));
           try {
             if (plannedList.length > 0) {
               usedLiveRenderer = true;
-              await applyWithListr(mgr, plannedList, { skipUpdates: !!opts.skipUpdates });
+              const plus = plannedList.length;
+              const minus = reconstructed.filter((d) => d.action === "noop").length;
+              const tilde = reconstructed.filter((d) => d.action === "skip").length;
+              await applyWithListr(
+                mgr,
+                plannedList,
+                { skipUpdates: !!opts.skipUpdates },
+                { plus, minus, tilde, bang: 0 },
+              );
             } else {
               await mgr.apply({ skipUpdates: !!opts.skipUpdates });
             }
+            actuallyApplied = true;
             result = {
               plan: reconstructed,
               stats: {
@@ -533,7 +578,7 @@ export function registerApply(program: Command): void {
           if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
             linesOut.pop();
             linesOut.push("│");
-            // Use rounded-corner with horizontal for final plan summary
+            // In apply mode, show branch to indicate follow-up prompt
             linesOut.push(`├─  ${summary}`);
           }
           logger.log(linesOut.join("\n"));
@@ -555,7 +600,9 @@ export function registerApply(program: Command): void {
         // Confirm apply (prompt follows the same wording)
         const proceed = await askConfirm("Apply this plan?");
         if (!proceed) {
-          logger.log(pc.dim("Aborted. No changes applied."));
+          // Add a spacer line with the gutter before the aborted message
+          logger.log("│");
+          logger.log(`╰─  ${pc.dim("Aborted. No changes applied.")}`);
           // Build a pseudo-result so the summary section below still renders
           result = {
             plan: decisions,
@@ -577,10 +624,19 @@ export function registerApply(program: Command): void {
           try {
             if (plannedList.length > 0) {
               usedLiveRenderer = true;
-              await applyWithListr(mgr, plannedList, { skipUpdates: !!opts.skipUpdates });
+              const plus = toApply.length;
+              const minus = decisions.filter((d) => d.action === "noop").length;
+              const tilde = decisions.filter((d) => d.action === "skip").length;
+              await applyWithListr(
+                mgr,
+                plannedList,
+                { skipUpdates: !!opts.skipUpdates },
+                { plus, minus, tilde, bang: 0 },
+              );
             } else {
               await mgr.apply({ skipUpdates: !!opts.skipUpdates });
             }
+            actuallyApplied = true;
             const planNow = decisions ?? ([] as Decisions);
             result = {
               plan: planNow,
@@ -615,9 +671,10 @@ export function registerApply(program: Command): void {
       // No summary panel; live progress plus any errors are sufficient
       if (!result) return; // safety
 
-      // Render an "Applies" panel mirroring the plan layout with a gutter.
-      // This lists items that were planned to be applied, grouped like the plan.
-      if (!usedLiveRenderer) {
+      // Render an "Applies" panel only if we actually applied
+      // and we didn't already show the live per-item renderer.
+      // This lists items that were applied (based on the plan), grouped like the plan.
+      if (actuallyApplied && !usedLiveRenderer) {
         const decisionsAll = result.plan;
         const appliesSections = buildAppliesSections(mgr, decisionsAll);
         // Only render if there's anything to show
@@ -638,7 +695,7 @@ export function registerApply(program: Command): void {
           if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
             linesOut.pop();
             linesOut.push("│");
-            linesOut.push(`├─  ${summary}`);
+            linesOut.push(`╰─  ${summary}`);
           }
           logger.log(linesOut.join("\n"));
         }

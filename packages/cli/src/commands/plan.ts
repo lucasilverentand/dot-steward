@@ -145,7 +145,7 @@ export function registerPlan(program: Command): void {
         linesOut.pop();
         linesOut.push("│");
         // Use rounded-corner with horizontal for final plan summary
-        linesOut.push(`├─  ${summary}`);
+        linesOut.push(`╰─  ${summary}`);
       }
       logger.log(linesOut.join("\n"));
 
