@@ -102,6 +102,13 @@ export type CoreEvents = {
 
   // Application lifecycle
   "item:apply_start": { item_id: string; kind: string; name?: string };
+  "item:apply_skip": {
+    item_id: string;
+    kind: string;
+    name?: string;
+    reason?: string;
+    blocked_by?: string[]; // dependency ids causing the skip
+  };
   "item:apply_done": { item_id: string; kind: string; name?: string };
   "item:apply_error": {
     item_id: string;
@@ -213,6 +220,15 @@ export const CoreEventSchemas: Record<keyof CoreEvents, z.ZodTypeAny> = {
       item_id: z.string().uuid(),
       kind: z.string(),
       name: z.string().optional(),
+    })
+    .strict(),
+  "item:apply_skip": z
+    .object({
+      item_id: z.string().uuid(),
+      kind: z.string(),
+      name: z.string().optional(),
+      reason: z.string().optional(),
+      blocked_by: z.array(z.string().uuid()).optional(),
     })
     .strict(),
   "item:apply_done": z

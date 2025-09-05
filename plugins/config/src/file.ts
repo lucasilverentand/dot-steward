@@ -3,7 +3,6 @@ import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import * as os from "node:os";
 import { ConfigPlugin } from "./plugin.ts";
 
 type Format = "json" | "yaml" | "toml" | "raw";
@@ -34,13 +33,10 @@ export class ConfigFile extends Item {
   }
 
   render(): string {
-    // Render with a home-based default to hint at the target
-    const home = process.env.HOME ?? os.homedir();
+    // Show absolute path as-is; for relative paths, indicate home-relative with '~/' without resolving
     const base = path.isAbsolute(this.filePath)
       ? this.filePath
-      : home
-        ? path.join(home, this.filePath)
-        : path.join(process.cwd(), this.filePath);
+      : `~/${this.filePath.replace(/^\/?/, "")}`;
     return `[config:${this.format}] ${base}`;
   }
 
@@ -332,8 +328,10 @@ function isPlain(v: unknown): v is Record<string, unknown> {
 }
 function resolveTargetPath(p: string, ctx: HostContext): string {
   if (path.isAbsolute(p)) return p;
-  const home = ctx.user.home ?? process.env.HOME ?? os.homedir();
-  const base = home ?? process.cwd();
-  return path.resolve(base, p);
+  const home = ctx.user.home;
+  if (!home)
+    throw new Error(
+      "config:file cannot resolve relative path: HostContext.user.home is missing",
+    );
+  return path.resolve(home, p);
 }
-

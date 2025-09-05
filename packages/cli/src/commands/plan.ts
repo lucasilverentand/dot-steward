@@ -2,7 +2,9 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
 import { renderListBox } from "../utils/table.ts";
+import { formatDecisionLine } from "../utils/planFormat.ts";
 import type { Command } from "commander";
+import { loadState, saveState, decisionsToSaved, hostKey } from "../state.ts";
 
 function resolveConfigToFileUrl(p: string): string {
   const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
@@ -105,7 +107,7 @@ export function registerPlan(program: Command): void {
         console.log("Plugins:");
         for (const plg of mgr.plugins) {
           const dec = decisionById.get(plg.id);
-          const label = plg.render();
+          let label = plg.render();
           // Default to no-op if no explicit decision found
           const action = dec?.action ?? "noop";
           let sym = "-";
@@ -126,6 +128,10 @@ export function registerPlan(program: Command): void {
             const summary = dec.details?.summary;
             const dup = summary?.includes(dec.reason);
             reasonNote = dup ? "" : ` ${DIM}(${dec.reason})${RESET}`;
+          }
+          // Add explicit [skip] prefix for skipped plugins when not already indicated
+          if (action === "skip" && !label.trim().startsWith("[skip]")) {
+            label = `[skip] ${label}`;
           }
           console.log(`${color}${sym} ${label}${usageNote}${reasonNote}${RESET}`);
         }
@@ -148,40 +154,29 @@ export function registerPlan(program: Command): void {
         // Items for this profile (even if some are incompatible at item level)
         for (const it of p.items) {
           const dec = decisionById.get(it.id);
-          const label = it.render();
           if (!dec) {
-            // Not part of active graph (should be rare); show as no-op
+            const label = it.render();
             console.log(`${DIM}- ${label} (not considered)${RESET}`);
             continue;
           }
-          let sym = "-";
-          let color = DIM;
-          // Map actions to Terraform-like symbols
-          if (dec.action === "apply") {
-            // Default to create (we don't differentiate modify yet)
-            sym = "+";
-            color = GREEN;
-          } else if (dec.action === "noop") {
-            sym = "-";
-            color = DIM;
-          } else if (dec.action === "skip") {
-            sym = "-";
-            color = DIM;
-          }
-          const summary = dec.details?.summary;
-          // Append reasons (like validation errors) even when a summary exists,
-          // but avoid duplicating when already present in the summary.
-          let reasonNote = "";
-          if (dec.action === "skip" && dec.reason) {
-            const dup = summary && summary.includes(dec.reason);
-            reasonNote = dup ? "" : ` ${DIM}(${dec.reason})${RESET}`;
-          }
-          const content = summary ? summary : label;
-          const line = `${color}${sym} ${content}${reasonNote}${RESET}`;
-          console.log(line);
+          console.log(formatDecisionLine(dec));
         }
         // Blank line after items for this profile
         console.log("");
+      }
+
+      // Persist last plan for later use by `apply`
+      try {
+        const st = await loadState();
+        st.lastPlan = {
+          configPath: opts.config,
+          host: hostKey(mgr),
+          at: new Date().toISOString(),
+          decisions: decisionsToSaved(decisions),
+        };
+        await saveState(st);
+      } catch {
+        // ignore errors on saving state
       }
 
       // Done

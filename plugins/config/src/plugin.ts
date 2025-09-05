@@ -14,9 +14,12 @@ export class ConfigPlugin extends Plugin {
     this.set_status("applied");
     return this.state.status;
   }
+
+  async apply(_ctx: HostContext): Promise<void> {
+    // No-op: config plugin provides file-writing items
+  }
 }
 
 export function configPlugin(): ConfigPlugin {
   return new ConfigPlugin();
 }
-

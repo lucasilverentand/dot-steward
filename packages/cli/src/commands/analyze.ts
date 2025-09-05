@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
+import { formatDecisionLine } from "../utils/planFormat.ts";
 import type { HostMatchExpr } from "@dot-steward/core";
 import type { Command } from "commander";
 import {
@@ -205,6 +206,8 @@ export function registerAnalyze(program: Command): void {
         ["CI", hc.env.ci ? "yes" : "no"],
         ["Devcontainer", hc.env.devcontainer ? "yes" : "no"],
       ];
+      // Blank line above Host Details
+      console.log("");
       console.log(
         renderKeyValueGridBox(hostRows, {
           columns: 2,
@@ -213,6 +216,8 @@ export function registerAnalyze(program: Command): void {
           padding: 1,
           dimLabels: true,
           title: "Host Details",
+          titleAlign: "left",
+          border: "none",
           labelMax: 12,
           valueMax: 32,
         }),
@@ -220,10 +225,14 @@ export function registerAnalyze(program: Command): void {
 
       // Plugins summary (before profiles)
       const pluginItems = mgr.plugins.map((plg) => plg.render());
+      // Blank line above Plugins
+      console.log("");
       console.log(
         renderListBox(pluginItems.length ? pluginItems : ["none"], {
           title: "Plugins",
+          titleAlign: "left",
           dimItems: true,
+          border: "none",
         }),
       );
       // Spacer after Plugins list
@@ -232,16 +241,29 @@ export function registerAnalyze(program: Command): void {
       // Profiles: one box per profile with essential details
       if (mgr.profiles.length === 0) {
         console.log(
-          renderListBox(["none"], { title: "Profiles", dimItems: true }),
+          renderListBox(["none"], {
+            title: "Profiles",
+            titleAlign: "left",
+            dimItems: true,
+            border: "none",
+          }),
         );
         console.log("");
       } else {
+        // Compute decisions once for consistent item formatting
+        let decisions: Awaited<ReturnType<typeof mgr.plan>> = [];
+        try {
+          decisions = await mgr.plan();
+        } catch {
+          decisions = [];
+        }
+        const decisionById = new Map(decisions.map((d) => [d.item.id, d] as const));
+
         for (const p of mgr.profiles) {
           const matched = hc.evaluateMatch(p.matches);
           const rows: Array<[string, string]> = [];
           rows.push(["Matched", matched ? "yes" : "no"]);
           rows.push(["Match", renderMatchFlow(p.matches, 44)]);
-          const footer = p.items.map((it) => it.render());
           const DIM = "\x1b[2m";
           const BOLD = "\x1b[1m";
           const RESET = "\x1b[0m";
@@ -252,12 +274,19 @@ export function registerAnalyze(program: Command): void {
               gap: 2,
               dimLabels: true,
               title,
+              titleAlign: "left",
+              border: "none",
               maxWidth: 70,
               valueMax: 44,
               labelMax: 10,
-              footerLines: footer,
             }),
           );
+          // Render items using the same formatting as plan tool
+          for (const it of p.items) {
+            const dec = decisionById.get(it.id);
+            if (dec) console.log(formatDecisionLine(dec));
+            else console.log(it.render());
+          }
           // Blank line after each profile box
           console.log("");
         }

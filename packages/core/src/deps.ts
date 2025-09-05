@@ -10,18 +10,15 @@ export class DependencyGraph {
   readonly incoming: Map<string, Set<string>> = new Map();
 
   add_items(items: Item[]): this {
-    const dev = process.env.NODE_ENV !== "production";
     for (const it of items) {
-      if (dev) {
-        // Validate item shape in dev to catch schema mismatches early
-        try {
-          ItemSchema.parse(it);
-        } catch (err) {
-          const id = (it as { id?: string }).id ?? "<unknown>";
-          throw new Error(
-            `Invalid item ${id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+      // Validate item shape to catch schema mismatches early
+      try {
+        ItemSchema.parse(it);
+      } catch (err) {
+        const id = (it as { id?: string }).id ?? "<unknown>";
+        throw new Error(
+          `Invalid item ${id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
       this.nodes.set(it.id, it);
       if (!this.outgoing.has(it.id)) this.outgoing.set(it.id, new Set());

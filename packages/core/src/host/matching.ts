@@ -245,8 +245,7 @@ export function evalMatchExpr(
       return false;
     }
     case "env-var": {
-      const isWin =
-        typeof process !== "undefined" && process.platform === "win32";
+      const isWin = ctx.os === "win32";
       const key = isWin ? expr.name.toUpperCase() : expr.name;
       const val = ctx.env.variables[key];
       if (expr.value === undefined) return val !== undefined; // existence

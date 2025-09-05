@@ -18,3 +18,8 @@ dot-steward --help
 dot-steward help
 ```
 
+## State
+
+- Location: saves CLI state under `~/.dot-steward/`.
+- Files: `last-plan.json`, `last-apply.json`.
+- Override base dir with `DOT_STEWARD_HOME`.

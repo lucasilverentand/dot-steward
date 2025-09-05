@@ -15,12 +15,10 @@ export class Manager {
   readonly deps = new DependencyGraph();
 
   constructor() {
-    // Enable dev-time event payload validation when not production
-    if (process.env.NODE_ENV !== "production") {
-      this.events.setValidator((event, payload) => {
-        validateCoreEvent(event as keyof CoreEvents, payload);
-      });
-    }
+    // Enable event payload validation
+    this.events.setValidator((event, payload) => {
+      validateCoreEvent(event as keyof CoreEvents, payload);
+    });
   }
 
   async init(configPath: string) {
@@ -59,6 +57,8 @@ export class Manager {
     const discovered = new Map<string, Plugin>();
     const discoveredByKey = new Map<string, Plugin>();
     const itemToPlugin = new Map<string, Plugin>();
+    // Track plugin->plugin usage edges (used -> user)
+    const pluginEdges: Array<{ from: string; to: string }> = [];
 
     // Helper that inspects an item and, if it refers to a plugin in any of the
     // supported ways, records that plugin into the discovery maps.
@@ -117,6 +117,40 @@ export class Manager {
     for (const pr of this._activeProfiles) {
       for (const it of pr.items) discoverFromItem(it, /*recordBinding*/ true);
     }
+    // Discover plugin-to-plugin usages declared via get_used_plugins() on plugins
+    // Iterate breadth-first to resolve transitive used plugins.
+    const queue: Plugin[] = Array.from(discovered.values());
+    const seenPluginIds = new Set(queue.map((p) => p.id));
+    while (queue.length > 0) {
+      const user = queue.shift()!; // plugin that may use others
+      const uses = (user as unknown as {
+        get_used_plugins?: () => Array<{
+          key: string;
+          get_plugin_factory: () => Plugin;
+          assign?: (p: Plugin) => void;
+        }>;
+      }).get_used_plugins?.();
+      if (!uses || uses.length === 0) continue;
+      for (const u of uses) {
+        let dep = discoveredByKey.get(u.key);
+        if (!dep) {
+          dep = u.get_plugin_factory();
+          discovered.set(dep.id, dep);
+          discoveredByKey.set(u.key, dep);
+          if (!seenPluginIds.has(dep.id)) {
+            queue.push(dep);
+            seenPluginIds.add(dep.id);
+          }
+        }
+        // inject instance if requested
+        try {
+          u.assign?.(dep);
+        } catch {
+          // ignore injection errors
+        }
+        pluginEdges.push({ from: dep.id, to: user.id });
+      }
+    }
     // Attach events to discovered plugins and register them
     for (const p of discovered.values()) p.attach_events(this.events);
     this._plugins.push(...discovered.values());
@@ -134,6 +168,8 @@ export class Manager {
     for (const [itemId, plugin] of itemToPlugin) {
       this.deps.add_edge(plugin.id, itemId);
     }
+    // Add edges from used plugin -> user plugin
+    for (const e of pluginEdges) this.deps.add_edge(e.from, e.to);
     const validation = this.deps.validate();
     const stats = {
       items: this.deps.nodes.size,
@@ -322,20 +358,67 @@ export class Manager {
           it as { matches?: import("./host/matching.ts").HostMatchExpr }
         ).matches;
         if (matches && !this.host.evaluateMatch(matches)) {
-          // Mark as give-up if not already applied
+          // Mark as give-up if not already applied and emit a skip notification
           if (it.state.status !== "applied") it.set_status("give-up");
-          await this.events.emit("item:apply_done", {
+          await this.events.emit("item:apply_skip", {
             item_id: it.id,
             kind: it.kind,
             name: (it as { name?: string }).name,
+            reason: "incompatible host",
           });
           continue;
         }
-        // Validate preconditions before applying
+
+        // Check runtime blockers: any required dependency not applied yet (or gave up)
+        const blockers = (it.requires ?? []).filter((depId) => {
+          const dep = this.deps.nodes.get(depId);
+          // Consider blocked unless the dependency is applied
+          return !dep || dep.state.status !== "applied";
+        });
+        if (blockers.length > 0) {
+          // Record waiting state and emit skip event
+          for (const b of blockers) it.add_wait(b);
+          // Keep status as pending if not already terminal
+          if (!it.is_terminal) it.set_status("pending");
+          await this.events.emit("item:apply_skip", {
+            item_id: it.id,
+            kind: it.kind,
+            name: (it as { name?: string }).name,
+            reason: "blocked: dependency not applied",
+            blocked_by: blockers,
+          });
+          continue;
+        }
+
+        // Validate preconditions before applying (do not retry on validation errors)
         await it.validate(this.host);
-        await it.apply(this.host);
-        // Mark applied on success
-        it.set_status("applied");
+
+        // Try applying with retries up to the item's limit
+        let applied = false;
+        let lastErr: unknown = undefined;
+        // Make sure attempts counter and status reflect fresh try loop
+        // (attempts are incremented on failures below)
+        while (!applied) {
+          try {
+            await it.apply(this.host);
+            it.reset_attempts();
+            it.set_status("applied");
+            it.clear_waits();
+            applied = true;
+          } catch (err) {
+            lastErr = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            it.increment_attempts();
+            it.set_status("failed", { error: msg });
+            if (it.can_retry) {
+              // continue loop to retry
+              continue;
+            } else {
+              it.set_status("give-up", { error: msg });
+              throw err;
+            }
+          }
+        }
         await this.events.emit("item:apply_done", {
           item_id: it.id,
           kind: it.kind,
@@ -343,7 +426,8 @@ export class Manager {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        it.set_status("failed", { error: msg });
+        // Mark unrecoverable state for validation errors or exhausted retries
+        if (it.state.status !== "applied") it.set_status("give-up", { error: msg });
         await this.events.emit("item:apply_error", {
           item_id: it.id,
           kind: it.kind,

@@ -1,11 +1,10 @@
 import { Item } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
-import { execFile as _execFile } from "node:child_process";
-import * as os from "node:os";
 import { ShellPlugin } from "./plugin.ts";
+import { runShell, type ShellKind } from "./exec.ts";
 
-export type ShellKind = "sh" | "bash" | "zsh" | "cmd" | "powershell";
+export type { ShellKind } from "./exec.ts";
 
 export type ShellCommandOptions = {
   shell?: ShellKind;
@@ -13,6 +12,9 @@ export type ShellCommandOptions = {
   env?: Record<string, string>;
   // If true, always considered pending to run on apply, no cleanup expected
   always?: boolean;
+  // Run with sudo: true forces sudo, "auto" uses HostContext (non-win) when user can sudo and is not root
+  sudo?: boolean | "auto";
+  sudoUser?: string;
 };
 
 export class ShellCommand extends Item {
@@ -59,64 +61,56 @@ export class ShellCommand extends Item {
   }
 
   async apply(ctx: HostContext): Promise<void> {
-    const home = ctx.user.home ?? process.env.HOME ?? os.homedir();
-    const { ok, stderr } = await runShell(this.applyCmd, {
-      ...this.options,
-      cwd: this.options?.cwd ?? home ?? process.cwd(),
-    });
+    const cwd = this.options?.cwd ?? ctx.user.home;
+    if (!cwd) throw new Error("shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home");
+    const shell = this.options?.shell ?? (ctx.os === "win32" ? "cmd" : "sh");
+    const env = { ...ctx.env.variables, ...(this.options?.env ?? {}) };
+    const sudoOpt = this.options?.sudo;
+    // Prefer plugin-run to allow interactive sudo prompt-once fallback
+    const res = this.plugin
+      ? await this.plugin.run(
+          this.applyCmd,
+          { shell, cwd, env, sudo: sudoOpt, sudoUser: this.options?.sudoUser },
+          ctx,
+        )
+      : await runShell(this.applyCmd, {
+          shell,
+          cwd,
+          env,
+          sudo:
+            sudoOpt === "auto"
+              ? ctx.os !== "win32" && !ctx.user.is_root && !!ctx.user.can_sudo
+              : !!sudoOpt,
+          sudoUser: this.options?.sudoUser,
+        });
+    const { ok, stderr } = res;
     if (!ok) throw new Error(`shell apply failed: ${stderr || "command error"}`);
   }
 
   async cleanup(ctx: HostContext): Promise<void> {
     if (!this.cleanupCmd) return; // optional one-way commands have no cleanup
-    const home = ctx.user.home ?? process.env.HOME ?? os.homedir();
-    const { ok, stderr } = await runShell(this.cleanupCmd, {
-      ...this.options,
-      cwd: this.options?.cwd ?? home ?? process.cwd(),
-    });
+    const cwd = this.options?.cwd ?? ctx.user.home;
+    if (!cwd) throw new Error("shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home");
+    const shell = this.options?.shell ?? (ctx.os === "win32" ? "cmd" : "sh");
+    const env = { ...ctx.env.variables, ...(this.options?.env ?? {}) };
+    const sudoOpt = this.options?.sudo;
+    const res = this.plugin
+      ? await this.plugin.run(
+          this.cleanupCmd,
+          { shell, cwd, env, sudo: sudoOpt, sudoUser: this.options?.sudoUser },
+          ctx,
+        )
+      : await runShell(this.cleanupCmd, {
+          shell,
+          cwd,
+          env,
+          sudo:
+            sudoOpt === "auto"
+              ? ctx.os !== "win32" && !ctx.user.is_root && !!ctx.user.can_sudo
+              : !!sudoOpt,
+          sudoUser: this.options?.sudoUser,
+        });
+    const { ok, stderr } = res;
     if (!ok) throw new Error(`shell cleanup failed: ${stderr || "command error"}`);
   }
-}
-
-function runShell(
-  cmd: string,
-  opts?: { shell?: ShellKind; cwd?: string; env?: Record<string, string> },
-): Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }> {
-  const shell = opts?.shell ?? (process.platform === "win32" ? "cmd" : "sh");
-  let file = "";
-  let args: string[] = [];
-  if (shell === "sh") {
-    file = "/bin/sh";
-    args = ["-lc", cmd];
-  } else if (shell === "bash") {
-    file = "/bin/bash";
-    args = ["-lc", cmd];
-  } else if (shell === "zsh") {
-    file = "/bin/zsh";
-    args = ["-lc", cmd];
-  } else if (shell === "powershell") {
-    file = process.platform === "win32" ? "powershell.exe" : "pwsh";
-    args = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd];
-  } else {
-    // cmd (Windows)
-    file = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
-    args = process.platform === "win32" ? ["/d", "/s", "/c", cmd] : ["-lc", cmd];
-  }
-
-  return new Promise((resolve) => {
-    const child = _execFile(
-      file,
-      args,
-      {
-        cwd: opts?.cwd,
-        env: { ...process.env, ...(opts?.env ?? {}) },
-        timeout: 30 * 60_000,
-        maxBuffer: 2 * 1024 * 1024,
-      },
-      (err, stdout, stderr) => {
-        resolve({ ok: !err, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "", code: (err as any)?.code ?? 0 });
-      },
-    );
-    child.on("error", () => resolve({ ok: false, stdout: "", stderr: "", code: -1 }));
-  });
 }

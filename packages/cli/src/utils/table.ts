@@ -117,16 +117,20 @@ export function renderKeyValueBox(
     dimLabels?: boolean;
     title?: string;
     titleDim?: boolean;
+    titleAlign?: "left" | "center";
     maxWidth?: number; // total box width including borders
     valueMax?: number; // optional clamp for value column width
     labelMax?: number; // optional clamp for label column width
     footerLines?: string[]; // optional footer rendered full-width beneath rows
     footerDim?: boolean;
+    border?: "box" | "none"; // box (default) or borderless
   },
 ): string {
   const gap = opts?.gap ?? 2; // spaces between label and value
   const padding = opts?.padding ?? 1; // spaces inside left/right borders
   const dimOn = opts?.dimLabels ?? true;
+  const border = opts?.border ?? "box";
+  const titleAlign = opts?.titleAlign ?? "center";
   const DIM = "\x1b[2m"; // faint
   const RESET_DIM = "\x1b[22m";
 
@@ -137,7 +141,7 @@ export function renderKeyValueBox(
     labelWidth = Math.min(labelWidth, opts.labelMax);
   if (opts?.valueMax && opts.valueMax > 0)
     valueWidth = Math.min(valueWidth, opts.valueMax);
-  const borderWidth = 2; // left/right
+  const borderWidth = border === "box" ? 2 : 0; // left/right borders
   const maxTotal = Math.max(10, Math.min(200, opts?.maxWidth ?? getTTYWidth()));
   const maxInside = Math.max(1, maxTotal - borderWidth);
   let insideWidth = padding + labelWidth + gap + valueWidth + padding;
@@ -160,8 +164,8 @@ export function renderKeyValueBox(
     insideWidth = padding + labelWidth + gap + valueWidth + padding;
   }
 
-  const top = `╭${"─".repeat(insideWidth)}╮`;
-  const bot = `╰${"─".repeat(insideWidth)}╯`;
+  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
+  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
 
   function wrapText(text: string, width: number): string[] {
     const vis = stripAnsi(text);
@@ -197,15 +201,17 @@ export function renderKeyValueBox(
   }
 
   const lines: string[] = [];
-  lines.push(top);
+  if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
     const rawTitle = stripAnsi(opts.title);
     const cropped = cropVisible(rawTitle, insideWidth);
     const titleText = opts.titleDim ? `\x1b[2m${cropped}\x1b[22m` : cropped;
     const titleLen = stripAnsi(cropped).length;
-    const left = Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    lines.push(`│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`);
+    if (border === "box")
+      lines.push(`│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`);
+    else lines.push(`${" ".repeat(left)}${titleText}${" ".repeat(right)}`);
   }
   for (const [rawK, rawV] of data) {
     const labelBase = padLeft(cropVisible(rawK, labelWidth), labelWidth);
@@ -215,17 +221,16 @@ export function renderKeyValueBox(
       const val = padRight(valueLines[i], valueWidth);
       const lab = i === 0 ? labelBase : " ".repeat(labelWidth);
       const labelOut = dimOn ? `${DIM}${lab}${RESET_DIM}` : lab;
-      lines.push(
-        `│${" ".repeat(padding)}${labelOut}${" ".repeat(gap)}${val}${" ".repeat(padding)}│`,
-      );
+      const content = `${" ".repeat(padding)}${labelOut}${" ".repeat(gap)}${val}${" ".repeat(padding)}`;
+      lines.push(border === "box" ? `│${content}│` : content);
     }
   }
   // Footer: render lines full-width (label + gap + value area)
   if (opts?.footerLines && opts.footerLines.length > 0) {
     const contentWidth = labelWidth + gap + valueWidth;
     const dimFooter = opts.footerDim ?? false;
-    // Subtle separator line between rows and footer
-    if (data.length > 0) {
+    // Only draw separator if boxed
+    if (border === "box" && data.length > 0) {
       const sep = `\x1b[2m${"─".repeat(contentWidth)}\x1b[22m`;
       lines.push(`│${" ".repeat(padding)}${sep}${" ".repeat(padding)}│`);
     }
@@ -236,12 +241,13 @@ export function renderKeyValueBox(
         for (const seg of segs) {
           const padded = padRight(seg, contentWidth);
           const out = dimFooter ? `\x1b[2m${padded}\x1b[22m` : padded;
-          lines.push(`│${" ".repeat(padding)}${out}${" ".repeat(padding)}│`);
+          const content = `${" ".repeat(padding)}${out}${" ".repeat(padding)}`;
+          lines.push(border === "box" ? `│${content}│` : content);
         }
       }
     }
   }
-  lines.push(bot);
+  if (bot) lines.push(bot);
   return lines.join("\n");
 }
 
@@ -254,17 +260,22 @@ export function renderListBox(
     dimItems?: boolean;
     bullet?: string;
     maxWidth?: number; // total box width including borders
+    border?: "box" | "none";
+    titleAlign?: "left" | "center";
   },
 ): string {
   const padding = opts?.padding ?? 1;
   const dimOn = opts?.dimItems ?? false;
   const bullet = opts?.bullet ?? "• ";
+  const border = opts?.border ?? "box";
+  const titleAlign = opts?.titleAlign ?? "center";
   const DIM = "\x1b[2m";
   const RESET_DIM = "\x1b[22m";
 
   const rows = items.map((it) => bullet + toCell(it));
   const ttyWidth = Math.max(10, Math.min(200, opts?.maxWidth ?? getTTYWidth()));
-  const maxInside = Math.max(1, ttyWidth - 2);
+  const borderWidth = border === "box" ? 2 : 0;
+  const maxInside = Math.max(1, ttyWidth - borderWidth);
   // First, estimate width; then clamp to terminal
   const contentWidth = Math.max(
     0,
@@ -274,18 +285,22 @@ export function renderListBox(
   const estimatedInside = padding + contentWidth + padding;
   const insideWidth = Math.min(maxInside, Math.max(1, estimatedInside));
 
-  const top = `╭${"─".repeat(insideWidth)}╮`;
-  const bot = `╰${"─".repeat(insideWidth)}╯`;
+  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
+  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
 
   const lines: string[] = [];
-  lines.push(top);
+  if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
     const croppedTitle = cropVisible(opts.title, insideWidth);
     const titleText = croppedTitle;
     const titleLen = stripAnsi(croppedTitle).length;
-    const left = Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    lines.push(`│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`);
+    lines.push(
+      border === "box"
+        ? `│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`
+        : `${" ".repeat(left)}${titleText}${" ".repeat(right)}`,
+    );
   }
   for (const r of rows) {
     const allowed = Math.max(0, insideWidth - padding - padding);
@@ -293,11 +308,10 @@ export function renderListBox(
     const visibleLen = stripAnsi(cropped).length;
     const rightPad = Math.max(0, allowed - visibleLen);
     const text = dimOn ? `${DIM}${cropped}${RESET_DIM}` : cropped;
-    lines.push(
-      `│${" ".repeat(padding)}${text}${" ".repeat(rightPad)}${" ".repeat(padding)}│`,
-    );
+    const content = `${" ".repeat(padding)}${text}${" ".repeat(rightPad)}${" ".repeat(padding)}`;
+    lines.push(border === "box" ? `│${content}│` : content);
   }
-  lines.push(bot);
+  if (bot) lines.push(bot);
   return lines.join("\n");
 }
 
@@ -312,9 +326,11 @@ export function renderKeyValueGridBox(
     padding?: number; // spaces inside left/right borders
     dimLabels?: boolean;
     title?: string;
+    titleAlign?: "left" | "center";
     maxWidth?: number; // total width including borders
     labelMax?: number;
     valueMax?: number;
+    border?: "box" | "none";
   },
 ): string {
   const cols = Math.max(1, opts?.columns ?? 2);
@@ -322,6 +338,8 @@ export function renderKeyValueGridBox(
   const colGap = Math.max(2, opts?.colGap ?? 2);
   const padding = Math.max(0, opts?.padding ?? 1);
   const dimOn = opts?.dimLabels ?? true;
+  const border = opts?.border ?? "box";
+  const titleAlign = opts?.titleAlign ?? "center";
   const DIM = "\x1b[2m";
   const RESET_DIM = "\x1b[22m";
 
@@ -355,9 +373,9 @@ export function renderKeyValueGridBox(
   const colW = labelW.map((lw, i) => lw + gap + valueW[i]);
 
   // Fit into terminal width
-  const border = 2; // left/right
+  const borderWidth = border === "box" ? 2 : 0; // left/right
   const tty = Math.max(10, Math.min(200, opts?.maxWidth ?? getTTYWidth()));
-  const maxInside = Math.max(1, tty - border);
+  const maxInside = Math.max(1, tty - borderWidth);
   const staticSpaces = padding + (cols - 1) * colGap + padding;
   let available = Math.max(1, maxInside - staticSpaces);
   const sumCol = colW.reduce((a, b) => a + b, 0);
@@ -387,17 +405,21 @@ export function renderKeyValueGridBox(
   }
 
   const insideWidth = staticSpaces + colW.reduce((a, b) => a + b, 0);
-  const top = `╭${"─".repeat(insideWidth)}╮`;
-  const bot = `╰${"─".repeat(insideWidth)}╯`;
+  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
+  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
 
   const lines: string[] = [];
-  lines.push(top);
+  if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
     const croppedTitle = cropVisible(opts.title, insideWidth);
     const titleLen = stripAnsi(croppedTitle).length;
-    const left = Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    lines.push(`│${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}│`);
+    lines.push(
+      border === "box"
+        ? `│${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}│`
+        : `${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}`,
+    );
   }
   for (let r = 0; r < rows; r++) {
     let rowText = "";
@@ -414,8 +436,9 @@ export function renderKeyValueGridBox(
       const labOut = dimOn ? `${DIM}${lab}${RESET_DIM}` : lab;
       rowText += labOut + " ".repeat(gap) + val;
     }
-    lines.push(`│${" ".repeat(padding)}${rowText}${" ".repeat(padding)}│`);
+    const content = `${" ".repeat(padding)}${rowText}${" ".repeat(padding)}`;
+    lines.push(border === "box" ? `│${content}│` : content);
   }
-  lines.push(bot);
+  if (bot) lines.push(bot);
   return lines.join("\n");
 }

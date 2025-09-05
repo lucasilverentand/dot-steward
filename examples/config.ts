@@ -14,7 +14,7 @@ const mac_base = profile({
     cask.cask("firefox"),
     // Example: compose YAML config to an example path in repo
     cfg.yaml(
-      "examples/out/app.yaml",
+      ".config/dot-steward/app.yaml",
       cfg.compose(
         { app: { name: "demo", theme: "${theme}", features: ["a", "b"] } },
         { app: { features: ["x", "y"], retries: 3 } },
@@ -25,8 +25,7 @@ const mac_base = profile({
     shell.cmd("echo hello", "echo 'hello from dot-steward'"),
     shell.always(
       "create sample file",
-      "mkdir -p examples/out && echo 'data' > examples/out/hello.txt",
-      // optional cleanup example could be added via shell.cmd with cleanup
+      "mkdir -p .config/dot-steward && echo 'data' > .config/dot-steward/hello.txt",
     ),
   ].flat(),
 });

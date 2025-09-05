@@ -26,50 +26,23 @@
       "name": "@dot-steward/core",
       "version": "0.0.0",
     },
-    "plugins/apt": {
-      "name": "@dot-steward/plugin-apt",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
     "plugins/brew": {
       "name": "@dot-steward/plugin-brew",
       "version": "0.0.0",
       "dependencies": {
         "@dot-steward/core": "workspace:*",
+        "@dot-steward/plugin-shell": "workspace:*",
       },
     },
-    "plugins/env": {
-      "name": "@dot-steward/plugin-env",
+    "plugins/config": {
+      "name": "@dot-steward/plugin-config",
       "version": "0.0.0",
       "dependencies": {
         "@dot-steward/core": "workspace:*",
       },
     },
-    "plugins/file": {
-      "name": "@dot-steward/plugin-file",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
-    "plugins/git": {
-      "name": "@dot-steward/plugin-git",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
-    "plugins/repos": {
-      "name": "@dot-steward/plugin-repos",
-      "version": "0.0.0",
-      "dependencies": {
-        "@dot-steward/core": "workspace:*",
-      },
-    },
-    "plugins/secret": {
-      "name": "@dot-steward/plugin-secret",
+    "plugins/shell": {
+      "name": "@dot-steward/plugin-shell",
       "version": "0.0.0",
       "dependencies": {
         "@dot-steward/core": "workspace:*",
@@ -99,19 +72,11 @@
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
 
-    "@dot-steward/plugin-apt": ["@dot-steward/plugin-apt@workspace:plugins/apt"],
-
     "@dot-steward/plugin-brew": ["@dot-steward/plugin-brew@workspace:plugins/brew"],
 
-    "@dot-steward/plugin-env": ["@dot-steward/plugin-env@workspace:plugins/env"],
+    "@dot-steward/plugin-config": ["@dot-steward/plugin-config@workspace:plugins/config"],
 
-    "@dot-steward/plugin-file": ["@dot-steward/plugin-file@workspace:plugins/file"],
-
-    "@dot-steward/plugin-git": ["@dot-steward/plugin-git@workspace:plugins/git"],
-
-    "@dot-steward/plugin-repos": ["@dot-steward/plugin-repos@workspace:plugins/repos"],
-
-    "@dot-steward/plugin-secret": ["@dot-steward/plugin-secret@workspace:plugins/secret"],
+    "@dot-steward/plugin-shell": ["@dot-steward/plugin-shell@workspace:plugins/shell"],
 
     "@types/bun": ["@types/bun@1.2.21", "", { "dependencies": { "bun-types": "1.2.21" } }, "sha512-NiDnvEqmbfQ6dmZ3EeUO577s4P5bf4HCTXtI6trMc6f6RzirY5IrF3aIookuSpyslFzrnvv2lmEWv5HyC1X79A=="],
 

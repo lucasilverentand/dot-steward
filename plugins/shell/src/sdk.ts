@@ -18,4 +18,3 @@ export const shell = {
 };
 
 export { ShellPlugin, shellPlugin } from "./plugin.ts";
-
