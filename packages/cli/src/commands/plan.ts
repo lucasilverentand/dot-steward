@@ -1,10 +1,10 @@
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
-import { renderListBox } from "../utils/table.ts";
-import { formatDecisionLine } from "../utils/planFormat.ts";
 import type { Command } from "commander";
-import { loadState, saveState, decisionsToSaved, hostKey } from "../state.ts";
+import { decisionsToSaved, hostKey, loadState, saveState } from "../state.ts";
+import { formatDecisionLine } from "../utils/planFormat.ts";
+import { renderListBox } from "../utils/table.ts";
 
 function resolveConfigToFileUrl(p: string): string {
   const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
@@ -37,16 +37,6 @@ export function registerPlan(program: Command): void {
         return;
       }
 
-      // Analyze to establish current state before planning
-      try {
-        await mgr.analyze();
-      } catch (err) {
-        console.error("Analyze failed while probing plugins.");
-        if (err instanceof Error) console.error(err.message);
-        process.exitCode = 1;
-        return;
-      }
-
       // Compute plan decisions
       let decisions: Awaited<ReturnType<typeof mgr.plan>>;
       try {
@@ -55,7 +45,9 @@ export function registerPlan(program: Command): void {
         console.error("Plan failed during validation.");
         // Show actionable, per-item validation errors when available
         const isAgg =
-          !!err && typeof err === "object" && "errors" in (err as any);
+          !!err &&
+          typeof err === "object" &&
+          "errors" in (err as Record<string, unknown>);
         if (isAgg) {
           const RESET = "\x1b[0m";
           const RED = "\x1b[31m";
@@ -72,7 +64,9 @@ export function registerPlan(program: Command): void {
               const it = mgr.deps.nodes.get(id);
               if (it) label = it.render();
             }
-            console.error(`${RED}! ${label}${RESET} ${DIM}->${RESET} ${detail}`);
+            console.error(
+              `${RED}! ${label}${RESET} ${DIM}->${RESET} ${detail}`,
+            );
           }
         } else if (err instanceof Error) {
           console.error(err.message);
@@ -133,7 +127,9 @@ export function registerPlan(program: Command): void {
           if (action === "skip" && !label.trim().startsWith("[skip]")) {
             label = `[skip] ${label}`;
           }
-          console.log(`${color}${sym} ${label}${usageNote}${reasonNote}${RESET}`);
+          console.log(
+            `${color}${sym} ${label}${usageNote}${reasonNote}${RESET}`,
+          );
         }
         // Spacer between plugins and profiles
         console.log("");

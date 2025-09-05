@@ -1,6 +1,12 @@
 import { Item, type ItemStatus } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
-import { BREW_MATCH, brewExec, execCapture, findBrewCmd } from "./common.ts";
+import {
+  BREW_MATCH,
+  brewEnv,
+  brewExec,
+  execCapture,
+  findBrewCmd,
+} from "./common.ts";
 import { BrewFormula } from "./formula.ts";
 import { BrewPlugin } from "./plugin.ts";
 
@@ -44,7 +50,21 @@ export class BrewTap extends Item {
   }
 
   async apply(_ctx: HostContext): Promise<void> {
-    await brewExec(["tap", this.tap], { timeoutMs: 5 * 60_000 });
+    // Newer Homebrew versions discourage tapping some official taps (e.g., homebrew/cask)
+    // and return a non-zero exit with a message like:
+    // "Tapping <tap> is no longer typically necessary. Add --force if you are sure..."
+    // Treat this as a successful no-op.
+    const cmd = await findBrewCmd();
+    if (!cmd) throw new Error("brew not found in PATH or standard locations");
+    const { ok, stderr } = await execCapture(cmd, ["tap", this.tap], {
+      timeoutMs: 5 * 60_000,
+      env: brewEnv(),
+    });
+    if (ok) return;
+    const msg = (stderr || "").toLowerCase();
+    if (msg.includes("no longer") && msg.includes("necessary")) return; // treat as no-op success
+    // Fallback: throw with captured stderr so the caller gets a clear error
+    throw new Error(stderr || `brew tap failed: ${this.tap}`);
   }
 
   async validate(_ctx: HostContext): Promise<void> {
@@ -54,8 +74,24 @@ export class BrewTap extends Item {
     }
   }
 
+  async plan(
+    ctx: HostContext,
+  ): Promise<import("@dot-steward/core").ItemPlan | null> {
+    const compatible = ctx.evaluateMatch(this.matches);
+    if (!compatible)
+      return { summary: `[skip] brew:tap ${this.tap} (incompatible host)` };
+    if (this._state.status === "applied")
+      return { summary: `[noop] brew:tap ${this.tap} (already applied)` };
+    return { summary: `brew:tap ${this.tap}` };
+  }
+
   render(): string {
     return `[brew:tap] ${this.tap}`;
+  }
+
+  // Allow Manager to deduplicate identical tap items across profiles
+  dedupe_key(): string {
+    return `brew:tap:${this.tap}`;
   }
 
   // Convenience creators that ensure dependency ordering and namespacing

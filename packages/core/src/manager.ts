@@ -122,14 +122,17 @@ export class Manager {
     const queue: Plugin[] = Array.from(discovered.values());
     const seenPluginIds = new Set(queue.map((p) => p.id));
     while (queue.length > 0) {
-      const user = queue.shift()!; // plugin that may use others
-      const uses = (user as unknown as {
-        get_used_plugins?: () => Array<{
-          key: string;
-          get_plugin_factory: () => Plugin;
-          assign?: (p: Plugin) => void;
-        }>;
-      }).get_used_plugins?.();
+      const user = queue.shift(); // plugin that may use others
+      if (!user) break;
+      const uses = (
+        user as unknown as {
+          get_used_plugins?: () => Array<{
+            key: string;
+            get_plugin_factory: () => Plugin;
+            assign?: (p: Plugin) => void;
+          }>;
+        }
+      ).get_used_plugins?.();
       if (!uses || uses.length === 0) continue;
       for (const u of uses) {
         let dep = discoveredByKey.get(u.key);
@@ -156,17 +159,56 @@ export class Manager {
     this._plugins.push(...discovered.values());
     // Build dependency graph from plugins and profile items
     // Include plugins so that items can depend on their owning plugin
-    if (this._plugins.length > 0) {
+    // Before adding, deduplicate compatible items that declare a stable dedupe key
+    const profileItemsRaw = this._activeProfiles.flatMap((p) => p.items);
+    type DedupeKeyFn = () => string;
+    const getKey = (it: import("./item.ts").Item): string | null => {
+      const f = (it as unknown as { dedupe_key?: DedupeKeyFn }).dedupe_key;
+      if (typeof f === "function") {
+        try {
+          const k = f.call(it);
+          if (typeof k === "string" && k.length > 0) return k;
+        } catch {
+          // ignore bad keys
+        }
+      }
+      return null;
+    };
+    const keyToCanonical = new Map<string, import("./item.ts").Item>();
+    const idMap = new Map<string, string>(); // duplicate id -> canonical id
+    for (const it of profileItemsRaw) {
+      const key = getKey(it);
+      if (!key) continue;
+      const canonical = keyToCanonical.get(key);
+      if (!canonical) keyToCanonical.set(key, it);
+      else {
+        idMap.set(it.id, canonical.id);
+      }
+    }
+    // Rewrite requires for all profile items to point to canonical ids when applicable
+    for (const it of profileItemsRaw) {
+      if (!it.requires || it.requires.length === 0) continue;
+      for (let i = 0; i < it.requires.length; i++) {
+        const cur = it.requires[i];
+        const canon = idMap.get(cur);
+        if (canon && canon !== cur) it.requires[i] = canon;
+      }
+    }
+    // Filter out duplicate items (keep only canonical or items without key)
+    const duplicateIds = new Set(idMap.keys());
+    const profileItems = profileItemsRaw.filter(
+      (it) => !duplicateIds.has(it.id),
+    );
+
+    if (this._plugins.length > 0)
       this.deps.add_items(
         this._plugins as unknown as import("./item.ts").Item[],
       );
-    }
-    for (const pr of this._activeProfiles) {
-      this.deps.add_items(pr.items);
-    }
-    // Add edges from plugin -> item for items bound to a plugin
+    if (profileItems.length > 0) this.deps.add_items(profileItems);
+    // Add edges from plugin -> item for items bound to a plugin (after canonicalization)
     for (const [itemId, plugin] of itemToPlugin) {
-      this.deps.add_edge(plugin.id, itemId);
+      const canon = idMap.get(itemId) ?? itemId;
+      this.deps.add_edge(plugin.id, canon);
     }
     // Add edges from used plugin -> user plugin
     for (const e of pluginEdges) this.deps.add_edge(e.from, e.to);
@@ -197,53 +239,7 @@ export class Manager {
     return this._activeProfiles;
   }
 
-  async analyze() {
-    await this.events.emit("manager:analyze_start");
-    const errors: Array<{ id: string; error: string }> = [];
-    // probe the plugins (items)
-    for (const plugin of this.plugins) {
-      await this.events.emit("item:probe_start", {
-        item_id: plugin.id,
-        kind: plugin.kind,
-        name: plugin.name,
-      });
-      try {
-        // Skip probe when host does not satisfy declared compatibility
-        if (!this.host.evaluateMatch(plugin.matches)) {
-          plugin.set_status("give-up");
-          await this.events.emit("item:probe_done", {
-            item_id: plugin.id,
-            kind: plugin.kind,
-            name: plugin.name,
-            status: plugin.state.status,
-          });
-          continue;
-        }
-        const status = await plugin.probe(this.host);
-        await this.events.emit("item:probe_done", {
-          item_id: plugin.id,
-          kind: plugin.kind,
-          name: plugin.name,
-          status,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await this.events.emit("item:probe_error", {
-          item_id: plugin.id,
-          kind: plugin.kind,
-          name: plugin.name,
-          error: msg,
-        });
-        errors.push({ id: plugin.id, error: msg });
-      }
-    }
-    await this.events.emit("manager:analyze_done");
-    if (errors.length > 0)
-      throw new AggregateError(
-        errors.map((e) => new Error(`${e.id}: ${e.error}`)),
-        "Analyze encountered errors",
-      );
-  }
+  // analyze() removed; probing happens inline in plan/apply/upgrade when needed
 
   // Plan the apply stage: produce a list of actions that would be taken
   // without performing any changes.
@@ -343,10 +339,67 @@ export class Manager {
     return items;
   }
 
-  async apply(): Promise<void> {
-    const items = this.topo_items();
+  async apply(opts?: {
+    skipUpdates?: boolean;
+    concurrency?: number;
+  }): Promise<void> {
+    const wantAutoUpdate = !opts?.skipUpdates;
+    const maxConcurrency = Math.max(1, opts?.concurrency ?? 4);
     const errors: Array<{ id: string; error: string }> = [];
-    for (const it of items) {
+    // Build dependency tracking: unmet deps count initialized to number of
+    // dependencies that are not currently applied.
+    const unmet = new Map<string, number>();
+    for (const [id, deps] of this.deps.incoming) {
+      let cnt = 0;
+      for (const d of deps) {
+        const dep = this.deps.nodes.get(d);
+        if (!dep || dep.state.status !== "applied") cnt++;
+      }
+      unmet.set(id, cnt);
+    }
+    for (const id of this.deps.nodes.keys())
+      if (!unmet.has(id)) unmet.set(id, 0);
+
+    const ready: string[] = [];
+    for (const [id, cnt] of unmet) if (cnt === 0) ready.push(id);
+    const processed = new Set<string>();
+    let running = 0;
+
+    // Per-plugin serialized queues (e.g., brew cannot run concurrently)
+    const groupLocks = new Map<string, Promise<unknown>>();
+    const runExclusive = async (
+      group: string | undefined,
+      fn: () => Promise<void>,
+    ): Promise<void> => {
+      if (!group) return fn();
+      const last = groupLocks.get(group) ?? Promise.resolve();
+      const next = last.then(fn);
+      // Store a silenced continuation so the chain doesn't break on rejection
+      groupLocks.set(
+        group,
+        next.catch(() => undefined),
+      );
+      return next;
+    };
+
+    const finishOne = (id: string, applied: boolean) => {
+      processed.add(id);
+      if (applied) {
+        const outs = this.deps.outgoing.get(id);
+        if (outs) {
+          for (const m of outs) {
+            const cur = unmet.get(m) ?? 0;
+            const next = Math.max(0, cur - 1);
+            unmet.set(m, next);
+            if (next === 0 && !processed.has(m)) ready.push(m);
+          }
+        }
+      }
+    };
+
+    const runItem = async (id: string) => {
+      const it = this.deps.nodes.get(id);
+      if (!it) return finishOne(id, false);
       await this.events.emit("item:apply_start", {
         item_id: it.id,
         kind: it.kind,
@@ -366,68 +419,113 @@ export class Manager {
             name: (it as { name?: string }).name,
             reason: "incompatible host",
           });
-          continue;
+          finishOne(id, false);
+          return;
         }
 
-        // Check runtime blockers: any required dependency not applied yet (or gave up)
-        const blockers = (it.requires ?? []).filter((depId) => {
-          const dep = this.deps.nodes.get(depId);
-          // Consider blocked unless the dependency is applied
-          return !dep || dep.state.status !== "applied";
-        });
-        if (blockers.length > 0) {
-          // Record waiting state and emit skip event
-          for (const b of blockers) it.add_wait(b);
-          // Keep status as pending if not already terminal
-          if (!it.is_terminal) it.set_status("pending");
-          await this.events.emit("item:apply_skip", {
-            item_id: it.id,
-            kind: it.kind,
-            name: (it as { name?: string }).name,
-            reason: "blocked: dependency not applied",
-            blocked_by: blockers,
-          });
-          continue;
-        }
-
+        const wasAppliedBefore = it.state.status === "applied";
+        const pluginKey = (it as unknown as { plugin_key?: string }).plugin_key;
         // Validate preconditions before applying (do not retry on validation errors)
         await it.validate(this.host);
-
-        // Try applying with retries up to the item's limit
-        let applied = false;
-        let lastErr: unknown = undefined;
-        // Make sure attempts counter and status reflect fresh try loop
-        // (attempts are incremented on failures below)
-        while (!applied) {
-          try {
-            await it.apply(this.host);
-            it.reset_attempts();
-            it.set_status("applied");
-            it.clear_waits();
-            applied = true;
-          } catch (err) {
-            lastErr = err;
-            const msg = err instanceof Error ? err.message : String(err);
-            it.increment_attempts();
-            it.set_status("failed", { error: msg });
-            if (it.can_retry) {
-              // continue loop to retry
-              continue;
-            } else {
-              it.set_status("give-up", { error: msg });
-              throw err;
+        if (!wasAppliedBefore) {
+          // Try applying with retries up to the item's limit
+          let applied = false;
+          while (!applied) {
+            try {
+              await runExclusive(
+                pluginKey === "brew" ? "brew" : undefined,
+                async () => {
+                  await it.apply(this.host);
+                },
+              );
+              it.reset_attempts();
+              it.set_status("applied");
+              it.clear_waits();
+              applied = true;
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              it.increment_attempts();
+              it.set_status("failed", { error: msg });
+              if (it.can_retry) {
+                // retry
+              } else {
+                it.set_status("give-up", { error: msg });
+                throw err;
+              }
             }
           }
         }
+
         await this.events.emit("item:apply_done", {
           item_id: it.id,
           kind: it.kind,
           name: (it as { name?: string }).name,
         });
+
+        // Auto-upgrade path: if item supports upgrades, check and perform
+        if (wantAutoUpdate) {
+          try {
+            // Only consider upgrades for items that are applied now
+            const needs = await it.has_upgrade(this.host);
+            if (needs) {
+              await this.events.emit("item:upgrade_start", {
+                item_id: it.id,
+                kind: it.kind,
+                name: (it as { name?: string }).name,
+              });
+              let done = false;
+              while (!done) {
+                try {
+                  await runExclusive(
+                    pluginKey === "brew" ? "brew" : undefined,
+                    async () => {
+                      await it.upgrade(this.host);
+                    },
+                  );
+                  it.reset_attempts();
+                  // remains applied
+                  await this.events.emit("item:upgrade_done", {
+                    item_id: it.id,
+                    kind: it.kind,
+                    name: (it as { name?: string }).name,
+                  });
+                  done = true;
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  it.increment_attempts();
+                  if (it.can_retry) {
+                    // retry
+                  } else {
+                    await this.events.emit("item:upgrade_error", {
+                      item_id: it.id,
+                      kind: it.kind,
+                      name: (it as { name?: string }).name,
+                      error: msg,
+                    });
+                    break;
+                  }
+                }
+              }
+            } else if (wasAppliedBefore) {
+              // Only emit skip when we actually checked upgrade for pre-installed items
+              await this.events.emit("item:upgrade_skip", {
+                item_id: it.id,
+                kind: it.kind,
+                name: (it as { name?: string }).name,
+                reason: "up-to-date",
+              });
+            }
+          } catch {
+            // ignore upgrade check failures silently in apply flow
+          }
+        }
+
+        finishOne(id, true);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // Mark unrecoverable state for validation errors or exhausted retries
-        if (it.state.status !== "applied") it.set_status("give-up", { error: msg });
+        if (it.state.status !== "applied")
+          it.set_status("give-up", { error: msg });
         await this.events.emit("item:apply_error", {
           item_id: it.id,
           kind: it.kind,
@@ -435,8 +533,53 @@ export class Manager {
           error: msg,
         });
         errors.push({ id: it.id, error: msg });
+        finishOne(id, false);
       }
+    };
+
+    // Simple work scheduler
+    const schedule = () => {
+      while (running < maxConcurrency && ready.length > 0) {
+        const id = ready.shift();
+        if (!id) break;
+        running++;
+        runItem(id).finally(() => {
+          running--;
+          schedule();
+        });
+      }
+    };
+
+    schedule();
+    // Wait for completion
+    await new Promise<void>((resolve) => {
+      const checkDone = () => {
+        if (running === 0 && ready.length === 0) resolve();
+        else setTimeout(checkDone, 10);
+      };
+      checkDone();
+    });
+
+    // Emit skips for items that remained blocked by unapplied dependencies
+    for (const id of this.deps.nodes.keys()) {
+      if (processed.has(id)) continue;
+      const it = this.deps.nodes.get(id);
+      if (!it) continue;
+      const blockers = Array.from(this.deps.incoming.get(id) ?? []).filter(
+        (dep) => {
+          const node = this.deps.nodes.get(dep);
+          return !node || node.state.status !== "applied";
+        },
+      );
+      await this.events.emit("item:apply_skip", {
+        item_id: it.id,
+        kind: it.kind,
+        name: (it as { name?: string }).name,
+        reason: "blocked: dependency not applied",
+        blocked_by: blockers,
+      });
     }
+
     if (errors.length > 0)
       throw new AggregateError(
         errors.map((e) => new Error(`${e.id}: ${e.error}`)),
@@ -487,6 +630,143 @@ export class Manager {
       throw new AggregateError(
         errors.map((e) => new Error(`${e.id}: ${e.error}`)),
         "Cleanup encountered errors",
+      );
+  }
+
+  // Dedicated upgrade flow: for items already applied, check if an upgrade is
+  // available and invoke the item's upgrade() if so.
+  async upgrade(): Promise<void> {
+    await this.events.emit("manager:upgrade_start");
+    // Ensure current statuses are known
+    // Probe items inline to establish current status before upgrades
+    const items = this.topo_items();
+    const errors: Array<{ id: string; error: string }> = [];
+    let upgraded = 0;
+    let skipped = 0;
+    for (const it of items) {
+      await this.events.emit("item:upgrade_start", {
+        item_id: it.id,
+        kind: it.kind,
+        name: (it as { name?: string }).name,
+      });
+      try {
+        // Skip if incompatible with host
+        const matches = (
+          it as { matches?: import("./host/matching.ts").HostMatchExpr }
+        ).matches;
+        if (matches && !this.host.evaluateMatch(matches)) {
+          await this.events.emit("item:upgrade_skip", {
+            item_id: it.id,
+            kind: it.kind,
+            name: (it as { name?: string }).name,
+            reason: "incompatible host",
+          });
+          skipped++;
+          continue;
+        }
+        // Probe to determine current installation status
+        try {
+          await it.probe(this.host);
+        } catch {
+          // ignore probe errors; treat as not installed
+        }
+        // Only upgrade items that are already applied
+        if (it.state.status !== "applied") {
+          await this.events.emit("item:upgrade_skip", {
+            item_id: it.id,
+            kind: it.kind,
+            name: (it as { name?: string }).name,
+            reason: "not installed",
+          });
+          skipped++;
+          continue;
+        }
+        // Respect runtime blockers: dependencies must be applied
+        const blockers = (it.requires ?? []).filter((depId) => {
+          const dep = this.deps.nodes.get(depId);
+          return !dep || dep.state.status !== "applied";
+        });
+        if (blockers.length > 0) {
+          await this.events.emit("item:upgrade_skip", {
+            item_id: it.id,
+            kind: it.kind,
+            name: (it as { name?: string }).name,
+            reason: "blocked: dependency not applied",
+          });
+          skipped++;
+          continue;
+        }
+        // Quick check: does an upgrade exist?
+        let needs = false;
+        try {
+          needs = await it.has_upgrade(this.host);
+        } catch {
+          needs = false; // conservative: if check fails, skip
+        }
+        if (!needs) {
+          await this.events.emit("item:upgrade_skip", {
+            item_id: it.id,
+            kind: it.kind,
+            name: (it as { name?: string }).name,
+            reason: "up-to-date",
+          });
+          skipped++;
+          continue;
+        }
+        // Execute upgrade with retry policy similar to apply
+        let done = false;
+        while (!done) {
+          try {
+            await it.upgrade(this.host);
+            it.reset_attempts();
+            // remains applied
+            it.set_status("applied");
+            await this.events.emit("item:upgrade_done", {
+              item_id: it.id,
+              kind: it.kind,
+              name: (it as { name?: string }).name,
+            });
+            done = true;
+            upgraded++;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            it.increment_attempts();
+            if (it.can_retry) {
+              // loop and retry
+            } else {
+              await this.events.emit("item:upgrade_error", {
+                item_id: it.id,
+                kind: it.kind,
+                name: (it as { name?: string }).name,
+                error: msg,
+              });
+              // Do not change applied status; record error
+              errors.push({ id: it.id, error: msg });
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await this.events.emit("item:upgrade_error", {
+          item_id: it.id,
+          kind: it.kind,
+          name: (it as { name?: string }).name,
+          error: msg,
+        });
+        errors.push({ id: it.id, error: msg });
+      }
+    }
+    await this.events.emit("manager:upgrade_done", {
+      items: items.length,
+      upgraded,
+      skipped,
+      failed: errors.length,
+    });
+    if (errors.length > 0)
+      throw new AggregateError(
+        errors.map((e) => new Error(`${e.id}: ${e.error}`)),
+        "Upgrade encountered errors",
       );
   }
 }

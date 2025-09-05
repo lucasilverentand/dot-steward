@@ -1,9 +1,9 @@
 import { type ItemStatus, Plugin } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
+import { ShellPlugin } from "@dot-steward/plugin-shell";
 import { BREW_MATCH } from "./common.ts";
 import { installHomebrewNonInteractive } from "./install.ts";
 import { isHomebrewInstalled } from "./install.ts";
-import { ShellPlugin } from "@dot-steward/plugin-shell";
 
 export class BrewPlugin extends Plugin {
   // Optional injected shell plugin (resolved by Manager)
@@ -37,7 +37,15 @@ export function brewPlugin(): BrewPlugin {
 
 // Declare shell as a used plugin so the Manager can discover and inject it
 // without requiring users to manually add it to profiles.
-(BrewPlugin.prototype as any).get_used_plugins = function (): Array<{
+(
+  BrewPlugin.prototype as unknown as {
+    get_used_plugins: () => Array<{
+      key: string;
+      get_plugin_factory: () => Plugin;
+      assign?: (p: Plugin) => void;
+    }>;
+  }
+).get_used_plugins = function (this: BrewPlugin): Array<{
   key: string;
   get_plugin_factory: () => Plugin;
   assign?: (p: Plugin) => void;
@@ -47,7 +55,7 @@ export function brewPlugin(): BrewPlugin {
       key: "shell",
       get_plugin_factory: () => new ShellPlugin(),
       assign: (p: Plugin) => {
-        (this as BrewPlugin).shell = p as ShellPlugin;
+        this.shell = p as ShellPlugin;
       },
     },
   ];

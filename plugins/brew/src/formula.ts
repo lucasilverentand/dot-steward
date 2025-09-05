@@ -5,6 +5,7 @@ import {
   brewExec,
   brewExecOk,
   brewInfoOk,
+  brewOutdated,
   findBrewCmd,
 } from "./common.ts";
 import { BrewPlugin } from "./plugin.ts";
@@ -34,7 +35,10 @@ export class BrewFormula extends Item {
       ...(opts?.tap ? [opts.tap.id] : []),
     ];
     const kind = opts?.kind ?? "formula";
-    super({ kind: kind === "cask" ? "brew:cask" : "brew:formula", requires: reqs });
+    super({
+      kind: kind === "cask" ? "brew:cask" : "brew:formula",
+      requires: reqs,
+    });
     this.name = name;
     this.plugin = plugin;
     this.tap = opts?.tap;
@@ -62,19 +66,28 @@ export class BrewFormula extends Item {
     }
   }
 
-  async validate(_ctx: HostContext): Promise<void> {
-    // For casks, we require an explicit tap and enforce matching for qualified names
+  async has_upgrade(_ctx: HostContext): Promise<boolean> {
+    return brewOutdated(this.pkgKind, this.name);
+  }
+
+  async upgrade(_ctx: HostContext): Promise<void> {
     if (this.pkgKind === "cask") {
-      if (!this.tap) {
-        throw new Error(
-          `brew cask '${this.name}' requires an explicit tap item. Create via tap.cask(name) or pass { tap }.`,
-        );
-      }
+      await brewExec(["upgrade", "--cask", ...this.flags, this.name], {
+        useFastEnv: false, // allow brew to auto-update metadata for upgrades
+      });
+    } else {
+      await brewExec(["upgrade", this.name], { useFastEnv: false });
+    }
+  }
+
+  async validate(_ctx: HostContext): Promise<void> {
+    // For casks, tapping is no longer required; if a tap is provided, ensure it matches a qualified name
+    if (this.pkgKind === "cask") {
       if (this.name.includes("/")) {
         const parts = this.name.split("/");
         if (parts.length >= 3) {
           const tapName = `${parts[0]}/${parts[1]}`;
-          if (this.tap.tap !== tapName) {
+          if (this.tap && this.tap.tap !== tapName) {
             throw new Error(
               `brew cask '${this.name}' tap mismatch: expected '${tapName}', got '${this.tap.tap}'`,
             );
@@ -106,7 +119,8 @@ export class BrewFormula extends Item {
     const brewCmd = await findBrewCmd();
     if (brewCmd) {
       const okCmd = await brewInfoOk(this.pkgKind, this.name);
-      if (!okCmd) throw new Error(`brew ${this.pkgKind} not found: ${this.name}`);
+      if (!okCmd)
+        throw new Error(`brew ${this.pkgKind} not found: ${this.name}`);
     }
   }
 

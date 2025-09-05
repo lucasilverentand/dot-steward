@@ -1,5 +1,5 @@
 {
-  "name": "@dot-steward/plugin-config",
+  "name": "@dot-steward/plugin-file",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -1,9 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { Plugin } from "@dot-steward/core";
 import { os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemStatus } from "@dot-steward/core";
-import { runShell, type ShellKind } from "./exec.ts";
-import { spawnSync } from "node:child_process";
+import { type ShellKind, runShell } from "./exec.ts";
 
 export class ShellPlugin extends Plugin {
   constructor() {
@@ -31,11 +31,17 @@ export class ShellPlugin extends Plugin {
       sudoUser?: string;
     },
     ctx?: HostContext, // optional: when provided and sudo:"auto", use ctx.user flags
-  ): Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }> {
+  ): Promise<{
+    ok: boolean;
+    stdout: string;
+    stderr: string;
+    code: number | null;
+  }> {
     let useSudo = false;
     if (opts?.sudo === true) useSudo = true;
     else if (opts?.sudo === "auto") {
-      if (ctx && ctx.os !== "win32") useSudo = !ctx.user.is_root && !!ctx.user.can_sudo;
+      if (ctx && ctx.os !== "win32")
+        useSudo = !ctx.user.is_root && !!ctx.user.can_sudo;
     }
     let res = await runShell(cmd, {
       shell: opts?.shell,

@@ -1,8 +1,8 @@
 import { Item } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
+import { type ShellKind, runShell } from "./exec.ts";
 import { ShellPlugin } from "./plugin.ts";
-import { runShell, type ShellKind } from "./exec.ts";
 
 export type { ShellKind } from "./exec.ts";
 
@@ -21,7 +21,10 @@ export class ShellCommand extends Item {
   readonly name: string;
   readonly plugin?: ShellPlugin;
   readonly plugin_key = "shell";
-  readonly matches = { type: "any", of: [{ type: "os", values: ["linux", "darwin", "win32"] }] } as const;
+  readonly matches = {
+    type: "any",
+    of: [{ type: "os", values: ["linux", "darwin", "win32"] }],
+  } as const;
 
   constructor(
     name: string,
@@ -62,7 +65,10 @@ export class ShellCommand extends Item {
 
   async apply(ctx: HostContext): Promise<void> {
     const cwd = this.options?.cwd ?? ctx.user.home;
-    if (!cwd) throw new Error("shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home");
+    if (!cwd)
+      throw new Error(
+        "shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home",
+      );
     const shell = this.options?.shell ?? (ctx.os === "win32" ? "cmd" : "sh");
     const env = { ...ctx.env.variables, ...(this.options?.env ?? {}) };
     const sudoOpt = this.options?.sudo;
@@ -84,13 +90,17 @@ export class ShellCommand extends Item {
           sudoUser: this.options?.sudoUser,
         });
     const { ok, stderr } = res;
-    if (!ok) throw new Error(`shell apply failed: ${stderr || "command error"}`);
+    if (!ok)
+      throw new Error(`shell apply failed: ${stderr || "command error"}`);
   }
 
   async cleanup(ctx: HostContext): Promise<void> {
     if (!this.cleanupCmd) return; // optional one-way commands have no cleanup
     const cwd = this.options?.cwd ?? ctx.user.home;
-    if (!cwd) throw new Error("shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home");
+    if (!cwd)
+      throw new Error(
+        "shell: host home directory is unknown; set options.cwd or ensure HostContext.user.home",
+      );
     const shell = this.options?.shell ?? (ctx.os === "win32" ? "cmd" : "sh");
     const env = { ...ctx.env.variables, ...(this.options?.env ?? {}) };
     const sudoOpt = this.options?.sudo;
@@ -111,6 +121,7 @@ export class ShellCommand extends Item {
           sudoUser: this.options?.sudoUser,
         });
     const { ok, stderr } = res;
-    if (!ok) throw new Error(`shell cleanup failed: ${stderr || "command error"}`);
+    if (!ok)
+      throw new Error(`shell cleanup failed: ${stderr || "command error"}`);
   }
 }

@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import type { Manager } from "@dot-steward/core";
 
 export type SavedDecision = {
@@ -65,7 +65,7 @@ export async function loadState(): Promise<CLIState> {
     try {
       const legacy = await fs.readFile(legacyStatePath(), "utf8");
       const parsed = JSON.parse(legacy) as CLIState;
-      if (parsed && (parsed as any).version === 1) {
+      if (parsed && parsed.version === 1) {
         out.lastPlan = parsed.lastPlan;
         out.lastApply = parsed.lastApply;
       }
@@ -77,32 +77,43 @@ export async function loadState(): Promise<CLIState> {
 export async function saveState(state: CLIState): Promise<void> {
   const dir = stateBaseDir();
   await fs.mkdir(dir, { recursive: true });
-  const hasOwn = (k: keyof CLIState) => Object.prototype.hasOwnProperty.call(state, k);
+  const hasOwn = (k: keyof CLIState) =>
+    Object.prototype.hasOwnProperty.call(state, k);
   // Write or remove last plan
   if (hasOwn("lastPlan")) {
     if (state.lastPlan) {
-      const data = JSON.stringify(state.lastPlan, null, 2) + "\n";
+      const data = `${JSON.stringify(state.lastPlan, null, 2)}\n`;
       await fs.writeFile(lastPlanPath(), data, "utf8");
     } else {
-      try { await fs.rm(lastPlanPath(), { force: true }); } catch {}
+      try {
+        await fs.rm(lastPlanPath(), { force: true });
+      } catch {}
     }
   }
   // Write or remove last apply
   if (hasOwn("lastApply")) {
     if (state.lastApply) {
-      const data = JSON.stringify(state.lastApply, null, 2) + "\n";
+      const data = `${JSON.stringify(state.lastApply, null, 2)}\n`;
       await fs.writeFile(lastApplyPath(), data, "utf8");
     } else {
-      try { await fs.rm(lastApplyPath(), { force: true }); } catch {}
+      try {
+        await fs.rm(lastApplyPath(), { force: true });
+      } catch {}
     }
   }
 }
 
-export function hostKey(mgr: Manager): { os: string | null; arch: string | null; home: string | null } {
+export function hostKey(mgr: Manager): {
+  os: string | null;
+  arch: string | null;
+  home: string | null;
+} {
   return { os: mgr.host.os, arch: mgr.host.arch, home: mgr.host.user.home };
 }
 
-export function decisionsToSaved(d: Awaited<ReturnType<Manager["plan"]>>): SavedDecision[] {
+export function decisionsToSaved(
+  d: Awaited<ReturnType<Manager["plan"]>>,
+): SavedDecision[] {
   return d.map((x) => ({
     item_id: x.item.id,
     action: x.action,

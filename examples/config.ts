@@ -1,38 +1,39 @@
 import { os, all, any, config, hostname, profile } from "@dot-steward/core";
 import { brew } from "../plugins/brew/src";
-import { cfg } from "../plugins/config/src";
+import { file } from "../plugins/file/src";
 import { shell } from "../plugins/shell/src";
 
-const cask = brew.tap("homebrew/cask");
+// Homebrew casks no longer require tapping; use brew.cask directly
 
 const mac_base = profile({
   name: "mac-base",
-  matches: os("darwin"), 
+  matches: os("darwin"),
   items: [
     brew.formula("cowsay"),
-    cask.cask("google-chrome"),
-    cask.cask("firefox"),
-    // Example: compose YAML config to an example path in repo
-    cfg.yaml(
+    brew.cask("google-chrome"),
+    brew.cask("firefox"),
+    // Example: compose YAML config written to user's home
+    file.yaml(
       ".config/dot-steward/app.yaml",
-      cfg.compose(
+      file.compose(
         { app: { name: "demo", theme: "${theme}", features: ["a", "b"] } },
         { app: { features: ["x", "y"], retries: 3 } },
       ),
       { vars: { theme: "dark" } },
     ),
+    // Example: copy a file from the repo to the user's config dir
+    file.from("examples/hello.txt", ".config/dot-steward/hello.txt", {
+      mode: 0o644,
+    }),
     // Example shell commands
     shell.cmd("echo hello", "echo 'hello from dot-steward'"),
-    shell.always(
-      "create sample file",
-      "mkdir -p .config/dot-steward && echo 'data' > .config/dot-steward/hello.txt",
-    ),
   ].flat(),
 });
 
 const mac_dev = profile({
   name: "mac-dev",
   matches: all(os("darwin"), any(hostname("mac"), hostname("macbook"))),
+  items: [brew.formula("git")],
 });
 
 export default config({

@@ -23,12 +23,13 @@ export function formatDecisionLine(dec: PlanDecision): string {
   // Ensure a clear skip indicator when action is skip
   let content = summary ? summary : label;
   if (dec.action === "skip") {
-    const hasPrefix = typeof content === "string" && content.trim().startsWith("[skip]");
+    const hasPrefix =
+      typeof content === "string" && content.trim().startsWith("[skip]");
     if (!hasPrefix) content = `[skip] ${content}`;
   }
   let reasonNote = "";
   if (dec.action === "skip" && dec.reason) {
-    const dup = summary && summary.includes(dec.reason);
+    const dup = summary?.includes(dec.reason);
     reasonNote = dup ? "" : ` ${DIM}(${dec.reason})${RESET}`;
   }
   return `${color}${sym} ${content}${reasonNote}${RESET}`;

@@ -12,16 +12,27 @@ export const BREW_CANDIDATES = [
 // Homebrew is meaningful on macOS and Linux only
 export const BREW_MATCH = hostOS("darwin", "linux");
 
+// Default environment to make Homebrew non-interactive and fast during checks
+export function brewEnv(base?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...(base ?? process.env),
+    HOMEBREW_NO_AUTO_UPDATE: "1",
+    HOMEBREW_NO_ANALYTICS: "1",
+    HOMEBREW_NO_INSTALL_CLEANUP: "1",
+    HOMEBREW_COLOR: "1",
+  };
+}
+
 export function execOk(
   cmd: string,
   args: string[] = [],
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; env?: NodeJS.ProcessEnv },
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const child = _execFile(
       cmd,
       args,
-      { timeout: opts?.timeoutMs ?? 30_000 },
+      { timeout: opts?.timeoutMs ?? 30_000, env: opts?.env },
       (err) => {
         resolve(!err);
       },
@@ -73,9 +84,10 @@ export async function findBrewCmd(): Promise<string | null> {
 export async function brewExecOk(args: string[]): Promise<boolean> {
   const cmd = await findBrewCmd();
   if (!cmd) return false;
-  return execOk(cmd, args);
+  return execOk(cmd, args, { env: brewEnv(), timeoutMs: 30_000 });
 }
 
+const _infoCache = new Map<string, boolean>();
 export async function brewInfoOk(
   kind: "formula" | "cask",
   name: string,
@@ -83,19 +95,24 @@ export async function brewInfoOk(
   const cmd = await findBrewCmd();
   if (!cmd) return false;
   const args = ["info", kind === "cask" ? "--cask" : "--formula", name];
-  return execOk(cmd, args, { timeoutMs: 30_000 });
+  const key = `${kind}:${name}`;
+  const cached = _infoCache.get(key);
+  if (typeof cached === "boolean") return cached;
+  const ok = await execOk(cmd, args, { timeoutMs: 30_000, env: brewEnv() });
+  _infoCache.set(key, ok);
+  return ok;
 }
 
 export async function brewTapExists(tap: string): Promise<boolean> {
   const cmd = await findBrewCmd();
   if (!cmd) return false;
   // tap-info returns non-zero when tap doesn't exist
-  return execOk(cmd, ["tap-info", tap], { timeoutMs: 30_000 });
+  return execOk(cmd, ["tap-info", tap], { timeoutMs: 30_000, env: brewEnv() });
 }
 
 export async function brewExec(
   args: string[],
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; env?: NodeJS.ProcessEnv; useFastEnv?: boolean },
 ): Promise<void> {
   const cmd = await findBrewCmd();
   if (!cmd) throw new Error("brew not found in PATH or standard locations");
@@ -103,7 +120,14 @@ export async function brewExec(
     const child = _execFile(
       cmd,
       args,
-      { timeout: opts?.timeoutMs ?? 10 * 60_000, maxBuffer: 1024 * 1024 },
+      {
+        timeout: opts?.timeoutMs ?? 10 * 60_000,
+        maxBuffer: 1024 * 1024,
+        env:
+          opts?.useFastEnv === false
+            ? (opts?.env ?? process.env)
+            : brewEnv(opts?.env ?? process.env),
+      },
       (err) => {
         if (err) reject(err);
         else resolve();
@@ -111,4 +135,31 @@ export async function brewExec(
     );
     child.on("error", (e) => reject(e));
   });
+}
+
+// Determine if a specific brew package is outdated
+export async function brewOutdated(
+  kind: "formula" | "cask",
+  name: string,
+): Promise<boolean> {
+  const cmd = await findBrewCmd();
+  if (!cmd) return false;
+  const args = [
+    "outdated",
+    "--quiet",
+    kind === "cask" ? "--cask" : "--formula",
+    name,
+  ];
+  const { ok, stdout } = await execCapture(cmd, args, {
+    timeoutMs: 60_000,
+    env: brewEnv(),
+  });
+  if (!ok) return false;
+  const lines = stdout
+    .split(/\r?\n/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return false;
+  // If brew printed the name (or any output) for this query, treat as outdated
+  return lines.some((ln) => ln.includes(name));
 }

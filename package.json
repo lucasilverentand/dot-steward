@@ -7,7 +7,7 @@
   },
   "workspaces": ["packages/*", "apps/*", "plugins/*"],
   "scripts": {
-    "lint": "biome check . && bun run scripts/check-static-this.mjs",
+    "lint": "biome check . && bun run scripts/check-static-this.mjs && bun run scripts/check-empty-lines.mjs",
     "lint:static-this": "bun run scripts/check-static-this.mjs",
     "format": "biome format --write ."
   },

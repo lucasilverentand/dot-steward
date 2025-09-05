@@ -1,4 +1,4 @@
-import { Manager } from "./manager.ts";
+import type { Manager } from "./manager.ts";
 
 export type ApplyStats = {
   items: number;
@@ -15,11 +15,7 @@ export type ApplyResult = {
   errors: ApplyError[];
 };
 
-// High-level orchestrator: analyze -> plan -> apply
-// Returns structured results and propagates apply errors in the `errors` array
 export async function applyAll(mgr: Manager): Promise<ApplyResult> {
-  // Analyze first so items and plugins are probed
-  await mgr.analyze();
   // Compute plan to get decisions and counts
   const decisions = await mgr.plan();
   const stats: ApplyStats = {
@@ -33,7 +29,10 @@ export async function applyAll(mgr: Manager): Promise<ApplyResult> {
     await mgr.apply();
   } catch (err) {
     // Manager.apply throws AggregateError with .errors[] containing Error instances.
-    const isAgg = !!err && typeof err === "object" && "errors" in (err as any);
+    const isAgg =
+      !!err &&
+      typeof err === "object" &&
+      "errors" in (err as Record<string, unknown>);
     if (isAgg) {
       const subs = (err as unknown as AggregateError).errors ?? [];
       for (const se of subs) {
@@ -51,4 +50,3 @@ export async function applyAll(mgr: Manager): Promise<ApplyResult> {
   }
   return { plan: decisions, stats, errors };
 }
-

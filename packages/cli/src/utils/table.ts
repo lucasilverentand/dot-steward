@@ -207,7 +207,10 @@ export function renderKeyValueBox(
     const cropped = cropVisible(rawTitle, insideWidth);
     const titleText = opts.titleDim ? `\x1b[2m${cropped}\x1b[22m` : cropped;
     const titleLen = stripAnsi(cropped).length;
-    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left =
+      titleAlign === "left"
+        ? 0
+        : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
     if (border === "box")
       lines.push(`│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`);
@@ -294,7 +297,10 @@ export function renderListBox(
     const croppedTitle = cropVisible(opts.title, insideWidth);
     const titleText = croppedTitle;
     const titleLen = stripAnsi(croppedTitle).length;
-    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left =
+      titleAlign === "left"
+        ? 0
+        : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
     lines.push(
       border === "box"
@@ -413,7 +419,10 @@ export function renderKeyValueGridBox(
   if (opts?.title && opts.title.length > 0) {
     const croppedTitle = cropVisible(opts.title, insideWidth);
     const titleLen = stripAnsi(croppedTitle).length;
-    const left = titleAlign === "left" ? 0 : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
+    const left =
+      titleAlign === "left"
+        ? 0
+        : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
     lines.push(
       border === "box"

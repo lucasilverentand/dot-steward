@@ -1,5 +1,5 @@
 import { ShellCommand, type ShellCommandOptions } from "./cmd.ts";
-import { ShellPlugin } from "./plugin.ts";
+import type { ShellPlugin } from "./plugin.ts";
 
 export const shell = {
   // Define a shell command with optional cleanup
@@ -12,8 +12,18 @@ export const shell = {
   },
 
   // Convenience: always-run (no-op cleanup by default)
-  always(name: string, apply: string, opts?: Omit<ShellCommandOptions, "always"> & { plugin?: ShellPlugin }) {
-    return new ShellCommand(name, apply, undefined, { ...(opts ?? {}), always: true }, opts?.plugin);
+  always(
+    name: string,
+    apply: string,
+    opts?: Omit<ShellCommandOptions, "always"> & { plugin?: ShellPlugin },
+  ) {
+    return new ShellCommand(
+      name,
+      apply,
+      undefined,
+      { ...(opts ?? {}), always: true },
+      opts?.plugin,
+    );
   },
 };
 

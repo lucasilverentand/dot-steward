@@ -92,6 +92,17 @@ export abstract class Item implements ItemShape {
     return Promise.resolve();
   }
 
+  // Upgrade flow (optional): subclasses can override to support upgrades.
+  // Default: no upgrades available / no-op.
+  async has_upgrade(_ctx: HostContext): Promise<boolean> {
+    return false;
+  }
+
+  async upgrade(_ctx: HostContext): Promise<void> {
+    // By default, items do not support upgrades; treat as no-op.
+    return Promise.resolve();
+  }
+
   // Planning: default implementation returns a generic summary.
   // Subclasses may override to provide detailed changes.
   async plan(ctx: HostContext): Promise<ItemPlan | null> {

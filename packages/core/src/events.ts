@@ -59,14 +59,20 @@ export type CoreEvents = {
   // Manager lifecycle
   "manager:init_start": { config_url: string };
   "manager:init_done": { profiles: number; plugins: number };
-  "manager:analyze_start": undefined;
-  "manager:analyze_done": undefined;
   "manager:plan_start": undefined;
   "manager:plan_done": {
     items: number;
     to_apply: number;
     skipped: number;
     noop: number;
+  };
+  // Upgrade lifecycle
+  "manager:upgrade_start": undefined;
+  "manager:upgrade_done": {
+    items: number;
+    upgraded: number;
+    skipped: number;
+    failed: number;
   };
   "manager:deps_built": {
     items: number;
@@ -117,6 +123,22 @@ export type CoreEvents = {
     error: string;
   };
 
+  // Upgrade item lifecycle
+  "item:upgrade_start": { item_id: string; kind: string; name?: string };
+  "item:upgrade_skip": {
+    item_id: string;
+    kind: string;
+    name?: string;
+    reason?: string;
+  };
+  "item:upgrade_done": { item_id: string; kind: string; name?: string };
+  "item:upgrade_error": {
+    item_id: string;
+    kind: string;
+    name?: string;
+    error: string;
+  };
+
   // Cleanup lifecycle
   "item:cleanup_start": { item_id: string; kind: string; name?: string };
   "item:cleanup_done": { item_id: string; kind: string; name?: string };
@@ -160,8 +182,6 @@ export const CoreEventSchemas: Record<keyof CoreEvents, z.ZodTypeAny> = {
   "manager:init_done": z
     .object({ profiles: z.number().int(), plugins: z.number().int() })
     .strict(),
-  "manager:analyze_start": z.undefined(),
-  "manager:analyze_done": z.undefined(),
   "manager:plan_start": z.undefined(),
   "manager:plan_done": z
     .object({
@@ -169,6 +189,15 @@ export const CoreEventSchemas: Record<keyof CoreEvents, z.ZodTypeAny> = {
       to_apply: z.number().int().nonnegative(),
       skipped: z.number().int().nonnegative(),
       noop: z.number().int().nonnegative(),
+    })
+    .strict(),
+  "manager:upgrade_start": z.undefined(),
+  "manager:upgrade_done": z
+    .object({
+      items: z.number().int().nonnegative(),
+      upgraded: z.number().int().nonnegative(),
+      skipped: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
     })
     .strict(),
   "manager:deps_built": z
@@ -239,6 +268,36 @@ export const CoreEventSchemas: Record<keyof CoreEvents, z.ZodTypeAny> = {
     })
     .strict(),
   "item:apply_error": z
+    .object({
+      item_id: z.string().uuid(),
+      kind: z.string(),
+      name: z.string().optional(),
+      error: z.string(),
+    })
+    .strict(),
+  "item:upgrade_start": z
+    .object({
+      item_id: z.string().uuid(),
+      kind: z.string(),
+      name: z.string().optional(),
+    })
+    .strict(),
+  "item:upgrade_skip": z
+    .object({
+      item_id: z.string().uuid(),
+      kind: z.string(),
+      name: z.string().optional(),
+      reason: z.string().optional(),
+    })
+    .strict(),
+  "item:upgrade_done": z
+    .object({
+      item_id: z.string().uuid(),
+      kind: z.string(),
+      name: z.string().optional(),
+    })
+    .strict(),
+  "item:upgrade_error": z
     .object({
       item_id: z.string().uuid(),
       kind: z.string(),

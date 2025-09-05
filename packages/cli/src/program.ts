@@ -1,8 +1,8 @@
 import { Command } from "commander";
-import { registerAnalyze } from "./commands/analyze.ts";
+import { registerApply } from "./commands/apply.ts";
 import { registerHelp } from "./commands/help.ts";
 import { registerPlan } from "./commands/plan.ts";
-import { registerApply } from "./commands/apply.ts";
+import { registerUpgrade } from "./commands/upgrade.ts";
 
 export function createProgram(): Command {
   const program = new Command();
@@ -14,9 +14,9 @@ export function createProgram(): Command {
 
   // Register commands
   registerHelp(program);
-  registerAnalyze(program);
   registerPlan(program);
   registerApply(program);
+  registerUpgrade(program);
 
   // Future commands can be registered here with program.command(...)
 
