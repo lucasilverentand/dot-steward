@@ -1,5 +1,3 @@
-import * as path from "node:path";
-import { pathToFileURL } from "node:url";
 import { type ApplyResult, Manager } from "@dot-steward/core";
 // hostKey moved into the import above
 import type { Command } from "commander";
@@ -7,13 +5,17 @@ import { decisionsToSaved, hostKey, loadState, saveState } from "../state.ts";
 import { type PlanDecision } from "../utils/planFormat.ts";
 import * as readline from "node:readline";
 // Removed Listr UI dependency for apply progress; we render manually
-import pc from "picocolors";
 import logger from "../utils/logger.ts";
 import { reconstructSavedDecisions } from "../utils/preview.ts";
 import { renderPanelSections } from "../utils/ui.ts";
 import { buildPlanSections } from "../utils/planSections.ts";
 import { renderTreeSubsections } from "../utils/planTree.ts";
 import { buildAppliesSections } from "../utils/appliesSections.ts";
+import resolveConfigToFileUrl from "../utils/config.ts";
+import { appendSummaryToPanel, buildLegendLine, buildSummaryLine, computeSummaryFromDecisions, type SummaryCounts } from "../utils/summary.ts";
+import { collectAggregateErrors } from "../utils/errors.ts";
+import pc from "picocolors";
+import { buildHostPanelLines } from "../utils/host.ts";
 
 type PlannedLabel = { id: string; title: string };
 
@@ -118,31 +120,13 @@ async function askConfirm(message: string): Promise<boolean> {
 
 // Preview rendering is unified via renderPlanPreview in utils/preview
 
-function collectAggregateErrors(err: unknown): Array<{ id: string; error: string }> {
-  const errors: Array<{ id: string; error: string }> = [];
-  const isAgg = !!err && typeof err === "object" && "errors" in (err as Record<string, unknown>);
-  if (isAgg) {
-    const subs = (err as unknown as AggregateError).errors ?? [];
-    for (const se of subs) {
-      const msg = se instanceof Error ? se.message : String(se);
-      const m = msg.match(/^([0-9a-fA-F-]{36}):\s*(.*)$/);
-      const id = m?.[1] ?? "";
-      const detail = m?.[2] ?? msg;
-      errors.push({ id, error: detail });
-    }
-  } else if (err instanceof Error) {
-    errors.push({ id: "", error: err.message });
-  } else if (err !== undefined) {
-    errors.push({ id: "", error: String(err) });
-  }
-  return errors;
-}
+// moved to ../utils/errors
 
 async function applyWithListr(
   mgr: Manager,
   planned: PlannedLabel[],
   opts: { skipUpdates?: boolean },
-  summaryCounts?: { plus: number; minus: number; tilde: number; bang?: number },
+  summaryCounts?: SummaryCounts,
 ): Promise<void> {
   // Manual, clack-like live renderer (no Listr). We mirror the style used elsewhere.
   type Status = "pending" | "running" | "done" | "skip" | "error";
@@ -201,12 +185,6 @@ async function applyWithListr(
   // Group rows by section: Plugins first, then per profile
   type Section = { title: string; rows: Row[] };
   const sections: Section[] = [];
-
-  // Map item.id -> profile name for ACTIVE profiles only
-  const idToProfile = new Map<string, string>();
-  for (const p of mgr.active_profiles) {
-    for (const it of p.items) idToProfile.set(it.id, p.name);
-  }
 
   // Collect plugin rows
   const pluginRows: Row[] = [];
@@ -337,23 +315,19 @@ async function applyWithListr(
   stopSpinner();
   // Build final footer summary line to mirror plan preview summary
   try {
-    const plus = summaryCounts?.plus ?? rows.filter((r) => r.status === "done").length;
-    const minus = summaryCounts?.minus ?? 0;
-    const tilde = summaryCounts?.tilde ?? rows.filter((r) => r.status === "skip").length;
-    const bang = summaryCounts?.bang ?? 0;
-    const sep = ` ${pc.dim("|")} `;
-    footerSummary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+    const counts: SummaryCounts = {
+      plus: summaryCounts?.plus ?? rows.filter((r) => r.status === "done").length,
+      minus: summaryCounts?.minus ?? 0,
+      tilde: summaryCounts?.tilde ?? rows.filter((r) => r.status === "skip").length,
+      bang: summaryCounts?.bang ?? 0,
+    };
+    footerSummary = buildSummaryLine(counts);
   } catch {
     footerSummary = null;
   }
   // Final redraw to ensure finished state is printed (with summary)
   if (isTTY) draw();
   if (applyErr) throw applyErr;
-}
-
-function resolveConfigToFileUrl(p: string): string {
-  const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
-  return pathToFileURL(abs).href;
 }
 
 export function registerApply(program: Command): void {
@@ -416,27 +390,14 @@ export function registerApply(program: Command): void {
         {
           // Plan preview sections/tree
           const planSections = buildPlanSections(mgr, reconstructed);
-          const legendLine = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
-          const planLines = [legendLine, "", ...renderTreeSubsections(planSections)];
+          const planLines = [buildLegendLine(), "", ...renderTreeSubsections(planSections)];
           // When reusing a saved plan, we intentionally skip Host Details;
           // only render the confirmation panel here.
-          const panel = renderPanelSections([
-            { title: "Plan", lines: planLines },
-          ]);
-          const plus = reconstructed.filter((d) => d.action === "apply").length;
-          const minus = reconstructed.filter((d) => d.action === "noop").length;
-          const tilde = reconstructed.filter((d) => d.action === "skip").length;
-          const bang = 0;
-          const sep = ` ${pc.dim("|")} `;
-          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
-          const linesOut = panel.split("\n");
-          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
-            linesOut.pop();
-            linesOut.push("│");
-            // In apply mode, show branch to indicate follow-up prompt
-            linesOut.push(`├─  ${summary}`);
-          }
-          logger.log(linesOut.join("\n"));
+          const panel = renderPanelSections([{ title: "Plan", lines: planLines }]);
+          const summary = buildSummaryLine(computeSummaryFromDecisions(reconstructed));
+          // In apply mode, show branch to indicate follow-up prompt
+          const withSummary = appendSummaryToPanel(panel, summary, "branch");
+          logger.log(withSummary);
         }
         // Confirm apply using the saved plan preview above
         const proceed = await askConfirm("Apply this plan?");
@@ -538,50 +499,17 @@ export function registerApply(program: Command): void {
         // Render clack-like panel title with items listed below
         {
           // Host details
-          const envFlags = [
-            mgr.host.env.ci ? "ci" : "not ci",
-            mgr.host.env.devcontainer ? "devcontainer" : "not devcontainer",
-          ].join(", ");
-          const userName = String(mgr.host.user.name ?? "-");
-          const uidStr = String(mgr.host.user.uid ?? "-");
-          const gidStr = String(mgr.host.user.gid ?? "-");
-          const homeStr = String(mgr.host.user.home ?? "-");
-          const userLine = `${userName} (gid: ${gidStr}, uid: ${uidStr}, home: ${homeStr})`;
-          const hostLines: Array<[string, string]> = [
-            ["Hostname", String(mgr.host.hostname ?? "-")],
-            ["OS", String(mgr.host.os ?? "-")],
-            ["Arch", String(mgr.host.arch ?? "-")],
-            ["Shell", String(mgr.host.env.variables.SHELL ?? "-")],
-            ["Env", envFlags],
-            ["User", userLine],
-          ];
-          const labelWidth = Math.max(0, ...hostLines.map(([k]) => String(k).length));
-          const hostPanelLines = hostLines.map(([k, v]) => {
-            const label = String(k).padStart(labelWidth, " ");
-            return `${pc.dim(label)}  ${v}`;
-          });
+          const hostPanelLines = buildHostPanelLines(mgr);
           // Apply preview
           const planSections = buildPlanSections(mgr, decisions);
-          const legendLine = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
-          const planLines = [legendLine, "", ...renderTreeSubsections(planSections)];
+          const planLines = [buildLegendLine(), "", ...renderTreeSubsections(planSections)];
           const panel = renderPanelSections([
             { title: "Host Details", lines: hostPanelLines },
             { title: "Plan", lines: planLines },
           ]);
-          const plus = decisions.filter((d) => d.action === "apply").length;
-          const minus = decisions.filter((d) => d.action === "noop").length;
-          const tilde = decisions.filter((d) => d.action === "skip").length;
-          const bang = 0;
-          const sep = ` ${pc.dim("|")} `;
-          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
-          const linesOut = panel.split("\n");
-          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
-            linesOut.pop();
-            linesOut.push("│");
-            // In apply mode, show branch to indicate follow-up prompt
-            linesOut.push(`├─  ${summary}`);
-          }
-          logger.log(linesOut.join("\n"));
+          const summary = buildSummaryLine(computeSummaryFromDecisions(decisions));
+          const withSummary = appendSummaryToPanel(panel, summary, "branch");
+          logger.log(withSummary);
         }
 
         // Save last plan for future runs
@@ -685,19 +613,11 @@ export function registerApply(program: Command): void {
             { title: "Applies", lines: appliesLines },
           ]);
           // Append a summary to the closing corner, consistent with plan preview
-          const plus = decisionsAll.filter((d) => d.action === "apply").length;
-          const minus = decisionsAll.filter((d) => d.action === "noop").length;
-          const tilde = decisionsAll.filter((d) => d.action === "skip").length;
-          const bang = 0; // destroy not tracked in current engine
-          const sep = ` ${pc.dim("|")} `;
-          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
-          const linesOut = panel.split("\n");
-          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
-            linesOut.pop();
-            linesOut.push("│");
-            linesOut.push(`╰─  ${summary}`);
-          }
-          logger.log(linesOut.join("\n"));
+          const summary = buildSummaryLine(
+            computeSummaryFromDecisions(decisionsAll),
+          );
+          const withSummary = appendSummaryToPanel(panel, summary, "corner");
+          logger.log(withSummary);
         }
       }
 

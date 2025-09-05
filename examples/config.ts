@@ -2,6 +2,7 @@ import { os, all, any, config, hostname, profile } from "@dot-steward/core";
 import { brew } from "../plugins/brew/src";
 import { file } from "../plugins/file/src";
 import { shell } from "../plugins/shell/src";
+import { appStore } from "../plugins/app-store/src";
 
 // Homebrew casks no longer require tapping; use brew.cask directly
 
@@ -27,6 +28,10 @@ const mac_base = profile({
     }),
     // Example shell commands
     shell.cmd("echo hello", "echo 'hello from dot-steward'"),
+    // Example: install a Mac App Store app by id (requires 'mas' CLI)
+    // You must be signed into the App Store in the GUI once.
+    // Replace with your preferred app id.
+    appStore.app(1502839586, { name: "Hand Mirror" }),
   ].flat(),
 });
 

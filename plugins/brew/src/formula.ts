@@ -127,6 +127,17 @@ export class BrewFormula extends Item {
   render(): string {
     return `[brew:${this.pkgKind}] ${this.name}`;
   }
+
+  // Allow Manager to deduplicate identical formula/cask items across profiles.
+  // Include flags for casks to avoid merging items with different behaviors.
+  dedupe_key(): string {
+    const base = `brew:${this.pkgKind}:${this.name}`;
+    if (this.pkgKind === "cask" && this.flags && this.flags.length > 0) {
+      const flagsNorm = Array.from(new Set(this.flags)).sort().join(",");
+      return `${base}|flags=${flagsNorm}`;
+    }
+    return base;
+  }
 }
 
 // Instances may be constructed without a plugin; Manager will bind one.

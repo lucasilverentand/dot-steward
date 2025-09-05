@@ -1,12 +1,6 @@
-import * as path from "node:path";
-import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
 import type { Command } from "commander";
-
-function resolveConfigToFileUrl(p: string): string {
-  const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
-  return pathToFileURL(abs).href;
-}
+import resolveConfigToFileUrl from "../utils/config.ts";
 
 export function registerUpgrade(program: Command): void {
   program
