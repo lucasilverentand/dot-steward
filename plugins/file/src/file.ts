@@ -40,7 +40,7 @@ export class FileContent extends Item {
     const base = path.isAbsolute(this.filePath)
       ? this.filePath
       : `~/${this.filePath.replace(/^\/?/, "")}`;
-    return `[file:${this.format}] ${base}`;
+    return base;
   }
 
   async probe(ctx: HostContext): Promise<ItemStatus> {
@@ -74,15 +74,18 @@ export class FileContent extends Item {
 
   async plan(ctx: HostContext): Promise<ItemPlan | null> {
     const abs = resolveTargetPath(this.filePath, ctx);
-    let note = "create";
+    // For plan preview, just render the destination path
+    // The action symbol (+/-) communicates create/update/noop already.
     try {
       const desired = await this.renderContent();
       const cur = await fs.readFile(abs, "utf8");
-      note = normalizeEOL(cur) === normalizeEOL(desired) ? "noop" : "update";
+      // still probe to establish status, but don't include in summary
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      normalizeEOL(cur) === normalizeEOL(desired);
     } catch {
-      note = "create";
+      // ignore
     }
-    return { summary: `${this.format} ${abs} (${note})` };
+    return { summary: `${abs}` };
   }
 
   async apply(ctx: HostContext): Promise<void> {
@@ -141,7 +144,7 @@ export class CopyFile extends Item {
   render(): string {
     const dest = this.destPath;
     const base = path.isAbsolute(dest) ? dest : `~/${dest.replace(/^\/?/, "")}`;
-    return `[file:copy] ${base}`;
+    return base;
   }
 
   async probe(ctx: HostContext): Promise<ItemStatus> {
@@ -177,17 +180,19 @@ export class CopyFile extends Item {
   async plan(ctx: HostContext): Promise<ItemPlan | null> {
     const srcAbs = resolveSourcePath(this.srcPath);
     const destAbs = resolveTargetPath(this.destPath, ctx);
-    let note = "create";
+    // For plan preview, just render the destination path
     try {
       const [src, dest] = await Promise.all([
         fs.readFile(srcAbs),
         fs.readFile(destAbs),
       ]);
-      note = src.equals(dest) ? "noop" : "update";
+      // establish status but keep summary minimal
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      src.equals(dest);
     } catch {
-      note = "create";
+      // ignore
     }
-    return { summary: `${srcAbs} -> ${destAbs} (${note})` };
+    return { summary: `${destAbs}` };
   }
 
   async apply(ctx: HostContext): Promise<void> {
@@ -451,4 +456,3 @@ function resolveSourcePath(p: string): string {
   if (path.isAbsolute(p)) return p;
   return path.resolve(process.cwd(), p);
 }
-

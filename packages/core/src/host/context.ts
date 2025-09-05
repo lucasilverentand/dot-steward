@@ -43,6 +43,7 @@ export const HostEnvSchema = z.object({
 export const HostContextSchema = z.object({
   os: HostOSSchema.nullable().default("unsupported"),
   arch: HostArchSchema.nullable().default("unsupported"),
+  hostname: z.string().nullable().default(null),
   env: HostEnvSchema.default({ variables: {}, ci: false, devcontainer: false }),
   user: HostUserSchema.default({
     name: null,
@@ -64,6 +65,7 @@ export type HostUser = z.infer<typeof HostUserSchema>;
 export class HostContext implements HostContextShape {
   os: HostOS | null;
   arch: HostArch | null;
+  hostname: string | null;
   env: HostEnv;
   user: HostUser;
 
@@ -71,6 +73,7 @@ export class HostContext implements HostContextShape {
     const defaults = HostContextSchema.parse({});
     this.os = defaults.os;
     this.arch = defaults.arch;
+    this.hostname = defaults.hostname;
     this.env = defaults.env;
     this.user = defaults.user;
   }
@@ -78,6 +81,7 @@ export class HostContext implements HostContextShape {
   async init(): Promise<this> {
     this.os = await this.detectOS();
     this.arch = await this.detectArch();
+    this.hostname = await this.detectHostname();
     this.env = await this.detectEnv();
     this.user = await this.detectUser();
     return this;
@@ -86,9 +90,50 @@ export class HostContext implements HostContextShape {
   // Evaluate a HostMatch expression against this context (delegates to matching.ts)
   evaluateMatch(expr: HostMatchExpr): boolean {
     return evalMatchExpr(
-      { os: this.os, arch: this.arch, env: this.env, user: this.user },
+      {
+        os: this.os,
+        arch: this.arch,
+        hostname: this.hostname,
+        env: this.env,
+        user: this.user,
+      },
       expr,
     );
+  }
+
+  private async detectHostname(): Promise<string | null> {
+    try {
+      const hn = os.hostname();
+      if (typeof hn === "string" && hn.length > 0) return this.cleanHostname(hn);
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private cleanHostname(hn: string): string {
+    const raw = hn.trim();
+    if (raw.length === 0) return raw;
+    const lower = raw.toLowerCase();
+    const suffixes = [
+      ".local",
+      ".lan",
+      ".home",
+      ".home.arpa",
+      ".localdomain",
+      ".localdomain.local",
+    ];
+    let out = raw;
+    for (const s of suffixes) {
+      if (lower.endsWith(s)) {
+        out = raw.slice(0, raw.length - s.length);
+        break;
+      }
+    }
+    // If still contains dots, prefer the first label as a short hostname
+    const dot = out.indexOf(".");
+    if (dot > 0) out = out.slice(0, dot);
+    return out;
   }
 
   private async detectOS(): Promise<HostOS> {

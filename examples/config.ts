@@ -32,7 +32,7 @@ const mac_base = profile({
 
 const mac_dev = profile({
   name: "mac-dev",
-  matches: all(os("darwin"), any(hostname("mac"), hostname("macbook"))),
+  matches: all(os("darwin"), any(hostname("mac"), hostname("macbook-air-luca"))),
   items: [brew.formula("git")],
 });
 

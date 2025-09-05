@@ -4,8 +4,288 @@ import { type ApplyResult, Manager } from "@dot-steward/core";
 // hostKey moved into the import above
 import type { Command } from "commander";
 import { decisionsToSaved, hostKey, loadState, saveState } from "../state.ts";
-import { type PlanDecision, formatDecisionLine } from "../utils/planFormat.ts";
-import { renderListBox } from "../utils/table.ts";
+import { type PlanDecision } from "../utils/planFormat.ts";
+import * as readline from "node:readline";
+// Removed Listr UI dependency for apply progress; we render manually
+import pc from "picocolors";
+import logger from "../utils/logger.ts";
+import { reconstructSavedDecisions } from "../utils/preview.ts";
+import { renderPanelSections } from "../utils/ui.ts";
+import { buildPlanSections } from "../utils/planSections.ts";
+import { renderTreeSubsections } from "../utils/planTree.ts";
+import { buildAppliesSections } from "../utils/appliesSections.ts";
+
+type PlannedLabel = { id: string; title: string };
+
+async function askConfirm(message: string): Promise<boolean> {
+  // Interactive Yes/No selector with arrow keys, space to toggle, Enter to confirm
+  // Fallback to readline prompt when TTY is unavailable.
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const isTTY = !!stdin.isTTY && !!stdout.isTTY;
+
+  const render = (yesSelected: boolean): string => {
+    const choice = yesSelected ? "├─  ● Yes / ○ No" : "├─  ○ Yes / ● No";
+    return ["│", `◆  ${message}`, "│", choice].join("\n");
+  };
+
+  if (isTTY) {
+    let yes = true; // default selection
+    const linesCount = 4; // panel height (message assumed single-line), no closing corner
+    const repaint = (initial = false) => {
+      const panel = render(yes);
+      if (!initial) stdout.write(`\x1b[${linesCount}A\x1b[J`); // move up and clear
+      stdout.write(panel + "\n");
+    };
+    // Initial paint
+    repaint(true);
+
+    return await new Promise<boolean>((resolve) => {
+      const onData = (data: Buffer | string) => {
+        const s = Buffer.isBuffer(data) ? data.toString("utf8") : data;
+        // Handle control keys
+        if (s === "\r" || s === "\n") {
+          cleanup();
+          resolve(yes);
+          return;
+        }
+        if (s === "\x03" /* Ctrl-C */ || s === "\x1b" /* Esc */) {
+          cleanup();
+          resolve(false);
+          return;
+        }
+        // Arrow keys, vim, WASD, space, y/n
+        if (s === "\x1b[C" /* right */ || s === "l" || s === "d" || s === "\x1b[B" /* down */) {
+          if (yes) {
+            yes = false;
+            repaint();
+          }
+          return;
+        }
+        if (s === "\x1b[D" /* left */ || s === "h" || s === "a" || s === "\x1b[A" /* up */) {
+          if (!yes) {
+            yes = true;
+            repaint();
+          }
+          return;
+        }
+        if (s === " " /* space */) {
+          yes = !yes;
+          repaint();
+          return;
+        }
+        if (s.toLowerCase() === "y") {
+          if (!yes) {
+            yes = true;
+            repaint();
+          }
+          return;
+        }
+        if (s.toLowerCase() === "n") {
+          if (yes) {
+            yes = false;
+            repaint();
+          }
+          return;
+        }
+      };
+
+      const cleanup = () => {
+        stdin.off("data", onData);
+        if (stdin.isTTY) stdin.setRawMode(false);
+        stdin.pause();
+      };
+
+      if (stdin.isTTY) stdin.setRawMode(true);
+      stdin.setEncoding("utf8");
+      stdin.resume();
+      stdin.on("data", onData);
+    });
+  }
+
+  // Fallback (non-TTY): simple readline yes/no input
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+  try {
+    const answer: string = await new Promise((resolve) =>
+      rl.question(`${message} (y/n): `, resolve as (v: string) => void),
+    );
+    const a = (answer || "").trim().toLowerCase();
+    return a === "y" || a === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+// Preview rendering is unified via renderPlanPreview in utils/preview
+
+function collectAggregateErrors(err: unknown): Array<{ id: string; error: string }> {
+  const errors: Array<{ id: string; error: string }> = [];
+  const isAgg = !!err && typeof err === "object" && "errors" in (err as Record<string, unknown>);
+  if (isAgg) {
+    const subs = (err as unknown as AggregateError).errors ?? [];
+    for (const se of subs) {
+      const msg = se instanceof Error ? se.message : String(se);
+      const m = msg.match(/^([0-9a-fA-F-]{36}):\s*(.*)$/);
+      const id = m?.[1] ?? "";
+      const detail = m?.[2] ?? msg;
+      errors.push({ id, error: detail });
+    }
+  } else if (err instanceof Error) {
+    errors.push({ id: "", error: err.message });
+  } else if (err !== undefined) {
+    errors.push({ id: "", error: String(err) });
+  }
+  return errors;
+}
+
+async function applyWithListr(
+  mgr: Manager,
+  planned: PlannedLabel[],
+  opts: { skipUpdates?: boolean },
+): Promise<void> {
+  // Manual, clack-like live renderer (no Listr). We mirror the style used elsewhere.
+  type Status = "pending" | "running" | "done" | "skip" | "error";
+  type Row = { id: string; title: string; status: Status; note?: string };
+  const rows: Row[] = planned.map((p) => ({ id: p.id, title: p.title, status: "pending" }));
+
+  // Track completion and errors per item
+  type Waiter = {
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (err: Error) => void;
+  };
+  const waiters = new Map<string, Waiter>();
+  for (const r of rows) {
+    let _resolve: () => void = () => {};
+    let _reject: (e: Error) => void = () => {};
+    const promise = new Promise<void>((res, rej) => {
+      _resolve = res;
+      _reject = rej;
+    });
+    waiters.set(r.id, { promise, resolve: _resolve, reject: _reject });
+  }
+
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const isTTY = !!stdin.isTTY && !!stdout.isTTY;
+  let printedLines = 0;
+
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let spinnerIdx = 0;
+  let spinnerTimer: NodeJS.Timeout | null = null;
+
+  const symbol = (row: Row): string => {
+    switch (row.status) {
+      case "pending":
+        return pc.dim("○");
+      case "running":
+        return pc.cyan(spinnerFrames[spinnerIdx % spinnerFrames.length]);
+      case "done":
+        return pc.green("✔");
+      case "skip":
+        return pc.yellow("↷");
+      case "error":
+        return pc.red("✖");
+    }
+  };
+
+  const formatLine = (row: Row): string => {
+    const note = row.note ? ` ${pc.dim("(")}${row.note}${pc.dim(")")}` : "";
+    return `│  ${symbol(row)} ${row.title}${note}`;
+  };
+
+  const draw = () => {
+    const header = "◆  Apply";
+    const lines = ["│", header, "│", ...rows.map(formatLine), "└"];
+    if (isTTY && printedLines > 0) {
+      stdout.write(`\x1b[${printedLines}A\x1b[J`);
+    }
+    stdout.write(lines.join("\n") + "\n");
+    printedLines = lines.length;
+  };
+
+  const startSpinner = () => {
+    if (!isTTY || spinnerTimer) return;
+    spinnerTimer = setInterval(() => {
+      spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+      if (rows.some((r) => r.status === "running")) draw();
+    }, 80);
+  };
+  const stopSpinner = () => {
+    if (spinnerTimer) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
+  };
+
+  // Initial paint
+  draw();
+
+  // Wire global listeners to update rows and settle waiters
+  const offStart = mgr.events.on("item:apply_start", (ev) => {
+    const row = rows.find((r) => r.id === ev.item_id);
+    if (row) {
+      row.status = "running";
+      row.note = "applying";
+      startSpinner();
+      if (isTTY) draw();
+      else logger.log(`${pc.cyan("→")} ${row.title}`);
+    }
+  });
+  const offDone = mgr.events.on("item:apply_done", (ev) => {
+    const row = rows.find((r) => r.id === ev.item_id);
+    if (row) {
+      row.status = "done";
+      row.note = undefined;
+      const w = waiters.get(ev.item_id);
+      w?.resolve();
+      if (isTTY) draw();
+      else logger.log(`${pc.green("✔")} ${row.title}`);
+    }
+  });
+  const offErr = mgr.events.on("item:apply_error", (ev) => {
+    const row = rows.find((r) => r.id === ev.item_id);
+    if (row) {
+      row.status = "error";
+      row.note = ev.error;
+      const w = waiters.get(ev.item_id);
+      w?.reject(new Error(ev.error));
+      if (isTTY) draw();
+      else logger.error(`${pc.red("✖")} ${row.title} ${pc.dim("->")} ${ev.error}`);
+    }
+  });
+  const offSkip = mgr.events.on("item:apply_skip", (ev) => {
+    const row = rows.find((r) => r.id === ev.item_id);
+    if (row) {
+      row.status = "skip";
+      row.note = ev.reason ?? (ev.blocked_by?.length ? "blocked" : "skipped");
+      const w = waiters.get(ev.item_id);
+      w?.resolve();
+      if (isTTY) draw();
+      else logger.log(`${pc.yellow("↷")} ${row.title} ${pc.dim("->")} ${row.note}`);
+    }
+  });
+
+  let applyErr: unknown = null;
+  const applyPromise = mgr
+    .apply({ skipUpdates: !!opts.skipUpdates })
+    .catch((e) => {
+      applyErr = e;
+    })
+    .finally(() => {
+      offStart();
+      offDone();
+      offErr();
+      offSkip();
+    });
+
+  // Wait for all items to settle and for apply to finish
+  await Promise.allSettled([applyPromise, ...[...waiters.values()].map((w) => w.promise)]);
+  stopSpinner();
+  // Final redraw to ensure finished state is printed
+  if (isTTY) draw();
+  if (applyErr) throw applyErr;
+}
 
 function resolveConfigToFileUrl(p: string): string {
   const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
@@ -28,10 +308,10 @@ export function registerApply(program: Command): void {
       try {
         await mgr.init(cfgUrl);
       } catch (err) {
-        console.error(
+        logger.error(
           `Failed to load config from ${opts.config}. Try --config examples/config.ts`,
         );
-        if (err instanceof Error) console.error(err.message);
+        if (err instanceof Error) logger.error(err.message);
         process.exitCode = 1;
         return;
       }
@@ -47,343 +327,137 @@ export function registerApply(program: Command): void {
         last.host.arch === mgr.host.arch &&
         last.host.home === mgr.host.user.home
       ) {
-        // Prompt: use last plan? y/N
-        const rl = await import("node:readline/promises");
-        const rli = rl.createInterface({
-          input: process.stdin,
-          output: process.stdout,
+        // First, show Host Details panel before asking
+        const envFlags = [
+          mgr.host.env.ci ? "ci" : "not ci",
+          mgr.host.env.devcontainer ? "devcontainer" : "not devcontainer",
+        ].join(", ");
+        const userName = String(mgr.host.user.name ?? "-");
+        const uidStr = String(mgr.host.user.uid ?? "-");
+        const gidStr = String(mgr.host.user.gid ?? "-");
+        const homeStr = String(mgr.host.user.home ?? "-");
+        const userLine = `${userName} (gid: ${gidStr}, uid: ${uidStr}, home: ${homeStr})`;
+        const hostLines: Array<[string, string]> = [
+          ["Hostname", String(mgr.host.hostname ?? "-")],
+          ["OS", String(mgr.host.os ?? "-")],
+          ["Arch", String(mgr.host.arch ?? "-")],
+          ["Shell", String(mgr.host.env.variables.SHELL ?? "-")],
+          ["Env", envFlags],
+          ["User", userLine],
+        ];
+        const labelWidth = Math.max(0, ...hostLines.map(([k]) => String(k).length));
+        const hostPanelLines = hostLines.map(([k, v]) => {
+          const label = String(k).padStart(labelWidth, " ");
+          return `${pc.dim(label)}  ${v}`;
         });
-        const ans = (await rli.question("Use last saved plan? [y/N] "))
-          .trim()
-          .toLowerCase();
-        rli.close();
-        useSavedPlan = ans === "y" || ans === "yes";
+        // Render Host Details but omit the closing corner to flow into the prompt
+        {
+          const panel = renderPanelSections([{ title: "Host Details", lines: hostPanelLines }]);
+          const out = panel.split("\n");
+          if (out.length > 0 && out[out.length - 1].trim() === "└") out.pop();
+          logger.log(out.join("\n"));
+        }
+
+        // Prompt: use last plan?
+        useSavedPlan = await askConfirm("Load plan from plan mode?");
       }
 
       let result: ApplyResult | null = null;
+      // Track whether we showed live progress (so we can avoid duplicate final summary)
+      let usedLiveRenderer = false;
       type Decisions = Awaited<ReturnType<typeof mgr.plan>>;
       let decisions: Decisions | null = null;
 
-      // --- Streaming progress renderer
-      type ProgressStatus =
-        | "pending"
-        | "applying"
-        | "done"
-        | "skipped"
-        | "waiting"
-        | "error";
-      type ProgressItem = {
-        id: string;
-        title: string;
-        status: ProgressStatus;
-        reason?: string;
-      };
-      const isTTY = !!(process.stdout as unknown as { isTTY?: boolean }).isTTY;
-      const GREEN = "\x1b[32m";
-      const YELLOW = "\x1b[33m";
-      const RED = "\x1b[31m";
-      const DIM = "\x1b[2m";
-      const RESET = "\x1b[0m";
-
-      function renderProgress(
-        items: ProgressItem[],
-        title: string,
-        idToProfile?: Map<string, string>,
-      ): string {
-        const order = items.slice();
-        const lineFor = (pi: ProgressItem): string => {
-          switch (pi.status) {
-            case "pending":
-              return `${DIM}• ${pi.title} ${DIM}(pending)${RESET}`;
-            case "applying":
-              return `${YELLOW}… ${pi.title} ${DIM}(applying)${RESET}`;
-            case "done":
-              return `${GREEN}✓ ${pi.title}${RESET}`;
-            case "skipped":
-              return `${DIM}→ ${pi.title}${pi.reason ? ` (${pi.reason})` : ""}${RESET}`;
-            case "waiting":
-              return `${DIM}⏸ ${pi.title}${pi.reason ? ` (${pi.reason})` : ""}${RESET}`;
-            case "error":
-              return `${RED}✗ ${pi.title}${pi.reason ? ` ${DIM}->${RESET} ${pi.reason}` : ""}${RESET}`;
-          }
-        };
-        // Group by profile (and a separate Plugins section for non-profile items)
-        let lines: string[] = [];
-        if (idToProfile && idToProfile.size > 0) {
-          const plugins: ProgressItem[] = [];
-          const byProfile = new Map<string, ProgressItem[]>();
-          for (const it of order) {
-            const prof = idToProfile.get(it.id);
-            if (prof) {
-              const arr = byProfile.get(prof) ?? [];
-              arr.push(it);
-              byProfile.set(prof, arr);
-            } else {
-              plugins.push(it);
-            }
-          }
-          // Plugins first if any
-          if (plugins.length > 0) {
-            lines.push("Plugins:");
-            for (const pi of plugins) lines.push(lineFor(pi));
-            lines.push("");
-          }
-          // Profiles in declaration order from idToProfile's insertion order is per-id; better to follow mgr.profiles
-          for (const p of mgr.profiles) {
-            const itemsInProfile = byProfile.get(p.name);
-            if (!itemsInProfile || itemsInProfile.length === 0) continue;
-            // Spacing around each profile group
-            lines.push("");
-            const BOLD = "\x1b[1m";
-            lines.push(`${DIM}profile:${RESET}${BOLD}${p.name}${RESET}`);
-            for (const pi of itemsInProfile) lines.push(lineFor(pi));
-            lines.push("");
-          }
-          // Remove trailing excessive blanks (keep leading blank for spacing after title)
-          while (lines.length > 0 && lines[lines.length - 1] === "")
-            lines.pop();
-        } else {
-          lines = order.map(lineFor);
-        }
-        // Build a full-width hyphen separator with the given title centered
-        const cols = (() => {
-          const c = (process.stdout as unknown as { columns?: number }).columns;
-          if (typeof c === "number" && c > 0) return Math.min(200, Math.max(10, c));
-          return 80;
-        })();
-        const label = ` ${title} `;
-        const pad = Math.max(0, cols - label.length);
-        const left = Math.floor(pad / 2);
-        const right = pad - left;
-        const t = `${"-".repeat(left)}${label}${"-".repeat(right)}`;
-        return renderListBox(lines.length ? lines : ["nothing to do"], {
-          title: t,
-          titleAlign: "left",
-          border: "none",
-          dimItems: false,
-          bullet: "",
-        });
-      }
-
-      function makeProgressUI(planned: Array<{ id: string; title: string }>) {
-        const items: ProgressItem[] = planned.map((p) => ({
-          id: p.id,
-          title: p.title,
-          status: "pending",
-        }));
-        const byId = new Map(items.map((i) => [i.id, i] as const));
-        // Build id -> profile-name map for grouping
-        const plannedIds = new Set(planned.map((p) => p.id));
-        const idToProfile = new Map<string, string>();
-        for (const p of mgr.profiles) {
-          const matched = mgr.host.evaluateMatch(p.matches);
-          if (!matched) continue;
-          for (const it of p.items) {
-            if (plannedIds.has(it.id)) idToProfile.set(it.id, p.name);
-          }
-        }
-        let lastLines = 0;
-        let started = false;
-        const printFrame = () => {
-          const frame = renderProgress(items, "Apply", idToProfile);
-          const lines = frame.split("\n");
-          if (isTTY) {
-            if (started && lastLines > 0) {
-              // Move up and clear previous frame
-              process.stdout.write(`\x1b[${lastLines}A`);
-              process.stdout.write("\x1b[0J");
-            }
-            process.stdout.write(`${frame}\n`);
-            lastLines = lines.length + 1; // include trailing newline
-            started = true;
-          } else {
-            // Non-TTY: just print the changed summary line
-            const applied = items.filter((i) => i.status === "done").length;
-            const failed = items.filter((i) => i.status === "error").length;
-            console.log(
-              `Applying: ${applied} done${failed ? `, ${failed} failed` : ""}`,
-            );
-          }
-        };
-        const update = (
-          id: string,
-          status: ProgressStatus,
-          reason?: string,
-        ) => {
-          const it = byId.get(id);
-          if (!it) return; // ignore items not in planned set
-          it.status = status;
-          it.reason = reason;
-          printFrame();
-        };
-        const unsub: Array<() => void> = [];
-        unsub.push(
-          mgr.events.on("item:apply_start", (p) =>
-            update(p.item_id, "applying"),
-          ),
-        );
-        unsub.push(
-          mgr.events.on("item:apply_done", (p) => update(p.item_id, "done")),
-        );
-        unsub.push(
-          mgr.events.on("item:apply_error", (p) =>
-            update(p.item_id, "error", p.error),
-          ),
-        );
-        unsub.push(
-          mgr.events.on("item:apply_skip", (p) => {
-            const reason =
-              p.reason ?? (p.blocked_by?.length ? "blocked" : undefined);
-            const st: ProgressStatus = p.blocked_by?.length
-              ? "waiting"
-              : "skipped";
-            update(p.item_id, st, reason);
-          }),
-        );
-        // initial frame
-        printFrame();
-        return {
-          stop() {
-            for (const off of unsub) off();
-            if (isTTY && started && lastLines > 0) {
-              // Leave the final frame on screen and add a spacer line
-              process.stdout.write("\n");
-              lastLines = 0;
-            }
-          },
-        };
-      }
+      // Styling via picocolors (pc)
       if (useSavedPlan && last) {
         // Use saved plan for display; still run analyze+apply freshly
         // (analyze step removed)
-        // Print the old (saved) plan for confirmation, grouped by profile
+        // Print the old (saved) plan for confirmation, matching `plan` formatting
         {
-          const BOLD = "\x1b[1m";
-          const toApplySaved = last.decisions.filter(
-            (d) => d.action === "apply",
+          // Reconstruct all saved decisions and render with the same sections/tree
+          const reconstructed: PlanDecision[] = reconstructSavedDecisions(
+            mgr,
+            last.decisions,
           );
-          const skippedSaved = last.decisions.filter(
-            (d) => d.action === "skip",
-          );
-          const noopSaved = last.decisions.filter((d) => d.action === "noop");
-          console.log(
-            `Planned: to apply ${toApplySaved.length}, skipped ${skippedSaved.length}, no-op ${noopSaved.length}`,
-          );
-          // Reconstruct lightweight decisions with item refs for formatting
-          const toApplyReconstructed = toApplySaved
-            .map((sd) => {
-              const it = mgr.deps.nodes.get(sd.item_id);
-              if (!it) return null;
-              const rec = {
-                item: it,
-                action: sd.action,
-                reason: sd.reason,
-                details: sd.summary
-                  ? ({
-                      summary: sd.summary,
-                    } as unknown as PlanDecision["details"])
-                  : undefined,
-              } as unknown as PlanDecision; // minimal shape used by formatDecisionLine
-              return rec;
-            })
-            .filter((x): x is NonNullable<typeof x> => !!x);
-          const decisionById = new Map(
-            toApplyReconstructed.map((d) => [d.item.id, d] as const),
-          );
-          // Plugins section (only those that are going to apply)
-          const pluginsToApply = mgr.plugins
-            .map((plg) => decisionById.get(plg.id))
-            .filter(
-              (d): d is NonNullable<typeof d> => !!d && d.action === "apply",
-            );
-          const hasPluginsSection = pluginsToApply.length > 0;
-          if (hasPluginsSection) {
-            console.log("Plugins:");
-            for (const d of pluginsToApply) console.log(formatDecisionLine(d));
-            console.log("");
+          // Plan preview sections/tree
+          const planSections = buildPlanSections(mgr, reconstructed);
+          const legendLine = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
+          const planLines = [legendLine, "", ...renderTreeSubsections(planSections)];
+          // We already showed Host Details above alongside the reuse prompt;
+          // only render the confirmation panel here.
+          const panel = renderPanelSections([
+            { title: "Plan", lines: planLines },
+          ]);
+          const plus = reconstructed.filter((d) => d.action === "apply").length;
+          const minus = reconstructed.filter((d) => d.action === "noop").length;
+          const tilde = reconstructed.filter((d) => d.action === "skip").length;
+          const bang = 0;
+          const sep = ` ${pc.dim("|")} `;
+          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+          const linesOut = panel.split("\n");
+          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
+            linesOut.pop();
+            linesOut.push("│");
+            // Use rounded-corner with horizontal for final plan summary
+            linesOut.push(`├─  ${summary}`);
           }
-          // Profiles: show matched profiles with items that will be applied
-          let printedAnyProfile = false;
-          for (const p of mgr.profiles) {
-            const matched = mgr.host.evaluateMatch(p.matches);
-            if (!matched) continue;
-            const items = p.items
-              .map((it) => decisionById.get(it.id))
-              .filter(
-                (d): d is NonNullable<typeof d> => !!d && d.action === "apply",
-              );
-            if (items.length === 0) continue;
-            if (!printedAnyProfile && !hasPluginsSection) console.log("");
-            printedAnyProfile = true;
-            const title = `${DIM}profile:${RESET}${BOLD}${p.name}${RESET}`;
-            console.log(title);
-            for (const d of items) console.log(formatDecisionLine(d));
-            console.log("");
-          }
+          logger.log(linesOut.join("\n"));
         }
-        // Build planned list from last.decisions for streaming
-        const plannedList = last.decisions
-          .filter((d) => d.action === "apply")
-          .map((d) => {
-            const it = mgr.deps.nodes.get(d.item_id);
-            const label = it ? it.render() : (d.summary ?? d.item_id);
-            return { id: d.item_id, title: label };
-          });
-        let ui: { stop(): void } | null = null;
-        try {
-          if (plannedList.length > 0) ui = makeProgressUI(plannedList);
-          await mgr.apply({ skipUpdates: !!opts.skipUpdates });
-        } catch (err) {
-          // Collect errors similar to applyAll
-          const errors: Array<{ id: string; error: string }> = [];
-          const isAgg =
-            !!err &&
-            typeof err === "object" &&
-            "errors" in (err as Record<string, unknown>);
-          if (isAgg) {
-            const subs = (err as unknown as AggregateError).errors ?? [];
-            for (const se of subs) {
-              const msg = se instanceof Error ? se.message : String(se);
-              const m = msg.match(/^([0-9a-fA-F-]{36}):\s*(.*)$/);
-              const id = m?.[1] ?? "";
-              const detail = m?.[2] ?? msg;
-              errors.push({ id, error: detail });
-            }
-          } else if (err instanceof Error) {
-            errors.push({ id: "", error: err.message });
-          } else {
-            errors.push({ id: "", error: String(err) });
-          }
-          // Build a pseudo-result for printing
-          decisions = await mgr.plan().catch(() => [] as Decisions);
+        // Confirm apply using the saved plan preview above
+        const proceed = await askConfirm("Apply this plan?");
+        if (!proceed) {
+          logger.log(pc.dim("Aborted. No changes applied."));
+          // Use reconstructed decisions to build a pseudo-result for summary
           result = {
-            plan: decisions ?? [],
+            plan: reconstructed,
             stats: {
-              items: last.decisions.length,
-              to_apply: last.decisions.filter((d) => d.action === "apply")
-                .length,
-              skipped: last.decisions.filter((d) => d.action === "skip").length,
-              noop: last.decisions.filter((d) => d.action === "noop").length,
-            },
-            errors,
-          };
-        } finally {
-          ui?.stop();
-        }
-        if (!result) {
-          // Success path: synthesize result using saved decisions; compute current plan for mapping labels
-          decisions = await mgr.plan().catch(() => [] as Decisions);
-          result = {
-            plan: decisions ?? [],
-            stats: {
-              items: last.decisions.length,
-              to_apply: last.decisions.filter((d) => d.action === "apply")
-                .length,
-              skipped: last.decisions.filter((d) => d.action === "skip").length,
-              noop: last.decisions.filter((d) => d.action === "noop").length,
+              items: reconstructed.length,
+              to_apply: reconstructed.filter((d) => d.action === "apply").length,
+              skipped: reconstructed.filter((d) => d.action === "skip").length,
+              noop: reconstructed.filter((d) => d.action === "noop").length,
             },
             errors: [],
           };
+        } else {
+          // Apply using saved planned items with live progress
+          const plannedList = last.decisions
+            .filter((d) => d.action === "apply")
+            .map((d) => {
+              const it = mgr.deps.nodes.get(d.item_id);
+              const label = it ? it.render() : d.summary ?? d.item_id;
+              return { id: d.item_id, title: label };
+            });
+          try {
+            if (plannedList.length > 0) {
+              usedLiveRenderer = true;
+              await applyWithListr(mgr, plannedList, { skipUpdates: !!opts.skipUpdates });
+            } else {
+              await mgr.apply({ skipUpdates: !!opts.skipUpdates });
+            }
+            result = {
+              plan: reconstructed,
+              stats: {
+                items: reconstructed.length,
+                to_apply: plannedList.length,
+                skipped: reconstructed.filter((d) => d.action === "skip").length,
+                noop: reconstructed.filter((d) => d.action === "noop").length,
+              },
+              errors: [],
+            };
+          } catch (err) {
+            logger.error("Apply failed.");
+            const errors = collectAggregateErrors(err);
+            result = {
+              plan: reconstructed,
+              stats: {
+                items: reconstructed.length,
+                to_apply: plannedList.length,
+                skipped: reconstructed.filter((d) => d.action === "skip").length,
+                noop: reconstructed.filter((d) => d.action === "noop").length,
+              },
+              errors,
+            };
+          }
         }
       } else {
         // New interactive flow: Analyze -> Plan -> prompt -> Apply (optional)
@@ -392,16 +466,13 @@ export function registerApply(program: Command): void {
         try {
           decisions = await mgr.plan();
         } catch (err) {
-          console.error("Plan failed during validation.");
+          logger.error("Plan failed during validation.");
           // Print per-item validation errors when available
           const isAgg =
             !!err &&
             typeof err === "object" &&
             "errors" in (err as Record<string, unknown>);
           if (isAgg) {
-            const RESET = "\x1b[0m";
-            const RED = "\x1b[31m";
-            const DIM = "\x1b[2m";
             const subErrors = (err as unknown as AggregateError).errors ?? [];
             for (const se of subErrors) {
               const msg = se instanceof Error ? se.message : String(se);
@@ -410,64 +481,62 @@ export function registerApply(program: Command): void {
               const detail = m?.[2] ?? msg;
               const it = id ? mgr.deps.nodes.get(id) : undefined;
               const label = it ? it.render() : id || "item";
-              console.error(
-                `${RED}! ${label}${RESET} ${DIM}->${RESET} ${detail}`,
-              );
+              logger.error(`${pc.red("!")} ${label} ${pc.dim("->")} ${detail}`);
             }
           } else if (err instanceof Error) {
-            console.error(err.message);
+            logger.error(err.message);
           }
           process.exitCode = 1;
           return;
         }
 
-        // Show a concise preview similar to `plan`, grouped by profile
-        const RESET = "\x1b[0m";
-        const GREEN = "\x1b[32m";
-        const DIM = "\x1b[2m";
-        const BOLD = "\x1b[1m";
-        const toApply = decisions.filter((d) => d.action === "apply");
-        const skipped = decisions.filter((d) => d.action === "skip");
-        const noop = decisions.filter((d) => d.action === "noop");
-        console.log(
-          `Planned: to apply ${toApply.length}, skipped ${skipped.length}, no-op ${noop.length}`,
-        );
-
-        // Group preview: first plugins to apply, then items grouped by profiles
-        const decisionById = new Map(
-          decisions.map((d) => [d.item.id, d] as const),
-        );
-
-        // Plugins section (only those that are going to apply)
-        const pluginsToApply = mgr.plugins
-          .map((plg) => decisionById.get(plg.id))
-          .filter(
-            (d): d is NonNullable<typeof d> => !!d && d.action === "apply",
-          );
-        const hasPluginsSection = pluginsToApply.length > 0;
-        if (hasPluginsSection) {
-          console.log("Plugins:");
-          for (const d of pluginsToApply) console.log(formatDecisionLine(d));
-          console.log("");
-        }
-
-        // Profiles: show matched profiles with items that will be applied
-        let printedAnyProfile = false;
-        for (const p of mgr.profiles) {
-          const matched = mgr.host.evaluateMatch(p.matches);
-          if (!matched) continue;
-          const items = p.items
-            .map((it) => decisionById.get(it.id))
-            .filter(
-              (d): d is NonNullable<typeof d> => !!d && d.action === "apply",
-            );
-          if (items.length === 0) continue;
-          if (!printedAnyProfile && !hasPluginsSection) console.log("");
-          printedAnyProfile = true;
-          const title = `${DIM}profile:${RESET}${BOLD}${p.name}${RESET}`;
-          console.log(title);
-          for (const d of items) console.log(formatDecisionLine(d));
-          console.log("");
+        // Render clack-like panel title with items listed below
+        {
+          // Host details
+          const envFlags = [
+            mgr.host.env.ci ? "ci" : "not ci",
+            mgr.host.env.devcontainer ? "devcontainer" : "not devcontainer",
+          ].join(", ");
+          const userName = String(mgr.host.user.name ?? "-");
+          const uidStr = String(mgr.host.user.uid ?? "-");
+          const gidStr = String(mgr.host.user.gid ?? "-");
+          const homeStr = String(mgr.host.user.home ?? "-");
+          const userLine = `${userName} (gid: ${gidStr}, uid: ${uidStr}, home: ${homeStr})`;
+          const hostLines: Array<[string, string]> = [
+            ["Hostname", String(mgr.host.hostname ?? "-")],
+            ["OS", String(mgr.host.os ?? "-")],
+            ["Arch", String(mgr.host.arch ?? "-")],
+            ["Shell", String(mgr.host.env.variables.SHELL ?? "-")],
+            ["Env", envFlags],
+            ["User", userLine],
+          ];
+          const labelWidth = Math.max(0, ...hostLines.map(([k]) => String(k).length));
+          const hostPanelLines = hostLines.map(([k, v]) => {
+            const label = String(k).padStart(labelWidth, " ");
+            return `${pc.dim(label)}  ${v}`;
+          });
+          // Apply preview
+          const planSections = buildPlanSections(mgr, decisions);
+          const legendLine = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
+          const planLines = [legendLine, "", ...renderTreeSubsections(planSections)];
+          const panel = renderPanelSections([
+            { title: "Host Details", lines: hostPanelLines },
+            { title: "Plan", lines: planLines },
+          ]);
+          const plus = decisions.filter((d) => d.action === "apply").length;
+          const minus = decisions.filter((d) => d.action === "noop").length;
+          const tilde = decisions.filter((d) => d.action === "skip").length;
+          const bang = 0;
+          const sep = ` ${pc.dim("|")} `;
+          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+          const linesOut = panel.split("\n");
+          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
+            linesOut.pop();
+            linesOut.push("│");
+            // Use rounded-corner with horizontal for final plan summary
+            linesOut.push(`├─  ${summary}`);
+          }
+          logger.log(linesOut.join("\n"));
         }
 
         // Save last plan for future runs
@@ -476,7 +545,6 @@ export function registerApply(program: Command): void {
           st2.lastPlan = {
             configPath: opts.config,
             host: hostKey(mgr),
-            at: new Date().toISOString(),
             decisions: decisionsToSaved(decisions),
           };
           await saveState(st2);
@@ -484,109 +552,106 @@ export function registerApply(program: Command): void {
           // ignore state save errors
         }
 
-        // Confirm apply
-        const rl = await import("node:readline/promises");
-        const rli = rl.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        const ans = (await rli.question("Apply this plan? [y/N] "))
-          .trim()
-          .toLowerCase();
-        rli.close();
-        const proceed = ans === "y" || ans === "yes";
+        // Confirm apply (prompt follows the same wording)
+        const proceed = await askConfirm("Apply this plan?");
         if (!proceed) {
-          console.log(`${DIM}Aborted. No changes applied.${RESET}`);
+          logger.log(pc.dim("Aborted. No changes applied."));
           // Build a pseudo-result so the summary section below still renders
           result = {
             plan: decisions,
             stats: {
               items: decisions.length,
-              to_apply: toApply.length,
-              skipped: skipped.length,
-              noop: noop.length,
+              to_apply: decisions.filter((d) => d.action === "apply").length,
+              skipped: decisions.filter((d) => d.action === "skip").length,
+              noop: decisions.filter((d) => d.action === "noop").length,
             },
             errors: [],
           };
         } else {
           // Apply using the plan context already computed with live progress
+          const toApply = decisions.filter((d) => d.action === "apply");
           const plannedList = toApply.map((d) => ({
             id: d.item.id,
             title: d.details?.summary ?? d.item.render(),
           }));
-          let ui: { stop(): void } | null = null;
           try {
-            if (plannedList.length > 0) ui = makeProgressUI(plannedList);
-            await mgr.apply({ skipUpdates: !!opts.skipUpdates });
+            if (plannedList.length > 0) {
+              usedLiveRenderer = true;
+              await applyWithListr(mgr, plannedList, { skipUpdates: !!opts.skipUpdates });
+            } else {
+              await mgr.apply({ skipUpdates: !!opts.skipUpdates });
+            }
             const planNow = decisions ?? ([] as Decisions);
             result = {
               plan: planNow,
               stats: {
                 items: planNow.length,
                 to_apply: toApply.length,
-                skipped: skipped.length,
-                noop: noop.length,
+                skipped: decisions.filter((d) => d.action === "skip").length,
+                noop: decisions.filter((d) => d.action === "noop").length,
               },
               errors: [],
             };
           } catch (err) {
-            console.error("Apply failed.");
+            logger.error("Apply failed.");
             // Collect apply errors for display in the summary section
-            const errors: Array<{ id: string; error: string }> = [];
-            const isAgg =
-              !!err &&
-              typeof err === "object" &&
-              "errors" in (err as Record<string, unknown>);
-            if (isAgg) {
-              const subs = (err as unknown as AggregateError).errors ?? [];
-              for (const se of subs) {
-                const msg = se instanceof Error ? se.message : String(se);
-                const m = msg.match(/^([0-9a-fA-F-]{36}):\s*(.*)$/);
-                const id = m?.[1] ?? "";
-                const detail = m?.[2] ?? msg;
-                errors.push({ id, error: detail });
-              }
-            } else if (err instanceof Error) {
-              errors.push({ id: "", error: err.message });
-            } else {
-              errors.push({ id: "", error: String(err) });
-            }
+            const errors = collectAggregateErrors(err);
             result = {
               plan: decisions,
               stats: {
                 items: decisions.length,
-                to_apply: toApply.length,
-                skipped: skipped.length,
-                noop: noop.length,
+                to_apply: decisions.filter((d) => d.action === "apply").length,
+                skipped: decisions.filter((d) => d.action === "skip").length,
+                noop: decisions.filter((d) => d.action === "noop").length,
               },
               errors,
             };
-          } finally {
-            ui?.stop();
           }
         }
       }
 
-      // Colors defined above: GREEN, YELLOW, RED, DIM, RESET
+      // Styling provided by picocolors
 
-      // Show summary
+      // No summary panel; live progress plus any errors are sufficient
       if (!result) return; // safety
-      const s = result.stats;
-      console.log(
-        `Summary: to apply ${s.to_apply}, skipped ${s.skipped}, no-op ${s.noop}`,
-      );
-      console.log("");
 
-      // The live progress already showed applied items; no need to re-list here.
+      // Render an "Applies" panel mirroring the plan layout with a gutter.
+      // This lists items that were planned to be applied, grouped like the plan.
+      if (!usedLiveRenderer) {
+        const decisionsAll = result.plan;
+        const appliesSections = buildAppliesSections(mgr, decisionsAll);
+        // Only render if there's anything to show
+        const hasAny = appliesSections.some((s) => s.lines.length > 0);
+        if (hasAny) {
+          const appliesLines = renderTreeSubsections(appliesSections);
+          const panel = renderPanelSections([
+            { title: "Applies", lines: appliesLines },
+          ]);
+          // Append a summary to the closing corner, consistent with plan preview
+          const plus = decisionsAll.filter((d) => d.action === "apply").length;
+          const minus = decisionsAll.filter((d) => d.action === "noop").length;
+          const tilde = decisionsAll.filter((d) => d.action === "skip").length;
+          const bang = 0; // destroy not tracked in current engine
+          const sep = ` ${pc.dim("|")} `;
+          const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+          const linesOut = panel.split("\n");
+          if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
+            linesOut.pop();
+            linesOut.push("│");
+            linesOut.push(`├─  ${summary}`);
+          }
+          logger.log(linesOut.join("\n"));
+        }
+      }
 
       // Errors (if any)
       if (result.errors.length > 0) {
-        console.log("");
-        console.error(`${RED}Errors:${RESET}`);
+        logger.log("");
+        logger.error(pc.red("Errors:"));
         for (const e of result.errors) {
           const it = e.id ? mgr.deps.nodes.get(e.id) : undefined;
           const label = it ? it.render() : e.id || "item";
-          console.error(`${RED}! ${label}${RESET} ${DIM}->${RESET} ${e.error}`);
+          logger.error(`${pc.red("!")} ${label} ${pc.dim("->")} ${e.error}`);
         }
         process.exitCode = 1;
       }
@@ -612,7 +677,6 @@ export function registerApply(program: Command): void {
         state.lastApply = {
           configPath: opts.config,
           host: hostKey(mgr),
-          at: new Date().toISOString(),
           applied,
         };
         await saveState(state);

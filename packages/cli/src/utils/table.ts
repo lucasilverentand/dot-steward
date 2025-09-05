@@ -1,5 +1,8 @@
 // Simple CLI table renderer with unicode borders
 // Usage: console.log(renderTable(["Col1", "Col2"], [["a", "b"], [1, true]]));
+import pc from "picocolors";
+import wrapAnsi from "wrap-ansi";
+import stringWidth from "string-width";
 
 function toCell(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -9,7 +12,7 @@ function toCell(value: unknown): string {
 
 function pad(str: string, len: number): string {
   const s = str;
-  const diff = len - s.length;
+  const diff = len - stringWidth(s);
   if (diff <= 0) return s;
   return s + " ".repeat(diff);
 }
@@ -23,14 +26,12 @@ function getTTYWidth(): number {
   return w && w > 0 ? w : 80;
 }
 
-function cropVisible(input: string, maxLen: number): string {
-  const visible = stripAnsi(input);
-  if (maxLen <= 0) return "";
-  if (visible.length <= maxLen) return input;
-  if (maxLen <= 1) return "…"; // as much as we can show
-  const slice = `${visible.slice(0, maxLen - 1)}…`;
-  // We dropped ANSI codes; safe because we apply styles after cropping normally.
-  return slice;
+function cropAnsi(input: string, maxCols: number): string {
+  if (maxCols <= 0) return "";
+  // Hard-wrap ensures long tokens are broken to fit within maxCols
+  const wrapped = wrapAnsi(String(input), maxCols, { hard: true, trim: false });
+  const idx = wrapped.indexOf("\n");
+  return idx === -1 ? wrapped : wrapped.slice(0, idx);
 }
 
 export function renderTable(
@@ -42,11 +43,8 @@ export function renderTable(
 
   const cols = Math.max(h.length, ...data.map((r) => r.length));
   let widths = Array.from({ length: cols }, (_, i) => {
-    const headerLen = h[i] ? stripAnsi(h[i]).length : 0;
-    const colLen = Math.max(
-      0,
-      ...data.map((r) => (r[i] ? stripAnsi(r[i]).length : 0)),
-    );
+    const headerLen = h[i] ? stringWidth(h[i]) : 0;
+    const colLen = Math.max(0, ...data.map((r) => (r[i] ? stringWidth(r[i]) : 0)));
     return Math.max(headerLen, colLen);
   });
 
@@ -66,25 +64,18 @@ export function renderTable(
     );
   }
 
-  const top = `┌${widths.map((w) => "─".repeat(w + 2)).join("┬")}┐`;
-  const sep = `├${widths.map((w) => "─".repeat(w + 2)).join("┼")}┤`;
-  const bot = `└${widths.map((w) => "─".repeat(w + 2)).join("┴")}┘`;
-
   const renderRow = (r: string[]) => {
-    const cells = widths.map((w, i) => pad(cropVisible(r[i] ?? "", w), w));
-    return `│ ${cells.join(" │ ")} │`;
+    const cells = widths.map((w, i) => pad(cropAnsi(r[i] ?? "", w), w));
+    return `${cells.join("  ")}`;
   };
 
   const lines: string[] = [];
-  lines.push(top);
   lines.push(renderRow(h));
-  lines.push(sep);
   for (const r of data) lines.push(renderRow(r));
-  lines.push(bot);
   return lines.join("\n");
 }
 
-// Strip ANSI escape codes for accurate width calculations
+// Retained for compatibility where needed
 function stripAnsi(input: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC codes are legitimate here
   const ansiRe = /\x1B\[[0-9;]*m/g;
@@ -93,14 +84,14 @@ function stripAnsi(input: string): string {
 
 function padLeft(str: string, len: number): string {
   const s = str;
-  const diff = len - s.length;
+  const diff = len - stringWidth(s);
   if (diff <= 0) return s;
   return " ".repeat(diff) + s;
 }
 
 function padRight(str: string, len: number): string {
   const s = str;
-  const diff = len - s.length;
+  const diff = len - stringWidth(s);
   if (diff <= 0) return s;
   return s + " ".repeat(diff);
 }
@@ -129,14 +120,13 @@ export function renderKeyValueBox(
   const gap = opts?.gap ?? 2; // spaces between label and value
   const padding = opts?.padding ?? 1; // spaces inside left/right borders
   const dimOn = opts?.dimLabels ?? true;
-  const border = opts?.border ?? "box";
+  const border = opts?.border ?? "none";
   const titleAlign = opts?.titleAlign ?? "center";
-  const DIM = "\x1b[2m"; // faint
-  const RESET_DIM = "\x1b[22m";
+  const DIM = (s: string) => pc.dim(s);
 
   const data = rows.map(([k, v]) => [toCell(k), toCell(v)] as [string, string]);
-  let labelWidth = Math.max(0, ...data.map(([k]) => stripAnsi(k).length));
-  let valueWidth = Math.max(0, ...data.map(([, v]) => stripAnsi(v).length));
+  let labelWidth = Math.max(0, ...data.map(([k]) => stringWidth(k)));
+  let valueWidth = Math.max(0, ...data.map(([, v]) => stringWidth(v)));
   if (opts?.labelMax && opts.labelMax > 0)
     labelWidth = Math.min(labelWidth, opts.labelMax);
   if (opts?.valueMax && opts.valueMax > 0)
@@ -164,57 +154,27 @@ export function renderKeyValueBox(
     insideWidth = padding + labelWidth + gap + valueWidth + padding;
   }
 
-  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
-  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
+  const top = "";
+  const bot = "";
 
   function wrapText(text: string, width: number): string[] {
-    const vis = stripAnsi(text);
     if (width <= 0) return [""];
-    if (vis.length <= width) return [text];
-    const words = vis.split(/\s+/g);
-    const lines: string[] = [];
-    let current = "";
-    const pushLine = () => {
-      lines.push(current);
-      current = "";
-    };
-    for (const w of words) {
-      if (w.length > width) {
-        // break long word
-        if (current.length > 0) pushLine();
-        for (let i = 0; i < w.length; i += width) {
-          lines.push(w.slice(i, i + width));
-        }
-        continue;
-      }
-      if (current.length === 0) {
-        current = w;
-      } else if (current.length + 1 + w.length <= width) {
-        current += ` ${w}`;
-      } else {
-        pushLine();
-        current = w;
-      }
-    }
-    if (current.length > 0) pushLine();
-    return lines.length ? lines : [""];
+    return wrapAnsi(String(text), width, { hard: true, trim: false }).split("\n");
   }
 
   const lines: string[] = [];
   if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
-    const rawTitle = stripAnsi(opts.title);
-    const cropped = cropVisible(rawTitle, insideWidth);
-    const titleText = opts.titleDim ? `\x1b[2m${cropped}\x1b[22m` : cropped;
-    const titleLen = stripAnsi(cropped).length;
+    const rawTitle = opts.title;
+    const cropped = cropAnsi(rawTitle, insideWidth);
+    const titleText = opts.titleDim ? pc.dim(cropped) : cropped;
+    const titleLen = stringWidth(cropped);
     const left =
       titleAlign === "left"
         ? 0
         : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    if (border === "box")
-      lines.push(`│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`);
-    else lines.push(`${" ".repeat(left)}${titleText}${" ".repeat(right)}`);
+    lines.push(`${" ".repeat(left)}${titleText}${" ".repeat(right)}`);
   }
   for (const [rawK, rawV] of data) {
     const labelBase = padLeft(cropVisible(rawK, labelWidth), labelWidth);
@@ -223,9 +183,9 @@ export function renderKeyValueBox(
     for (let i = 0; i < valueLines.length; i++) {
       const val = padRight(valueLines[i], valueWidth);
       const lab = i === 0 ? labelBase : " ".repeat(labelWidth);
-      const labelOut = dimOn ? `${DIM}${lab}${RESET_DIM}` : lab;
+      const labelOut = dimOn ? DIM(lab) : lab;
       const content = `${" ".repeat(padding)}${labelOut}${" ".repeat(gap)}${val}${" ".repeat(padding)}`;
-      lines.push(border === "box" ? `│${content}│` : content);
+      lines.push(content);
     }
   }
   // Footer: render lines full-width (label + gap + value area)
@@ -233,9 +193,9 @@ export function renderKeyValueBox(
     const contentWidth = labelWidth + gap + valueWidth;
     const dimFooter = opts.footerDim ?? false;
     // Only draw separator if boxed
-    if (border === "box" && data.length > 0) {
-      const sep = `\x1b[2m${"─".repeat(contentWidth)}\x1b[22m`;
-      lines.push(`│${" ".repeat(padding)}${sep}${" ".repeat(padding)}│`);
+    if (data.length > 0) {
+      const sep = pc.dim("─".repeat(contentWidth));
+      lines.push(`${" ".repeat(padding)}${sep}${" ".repeat(padding)}`);
     }
     for (const footerLine of opts.footerLines) {
       const parts = String(footerLine).split("\n");
@@ -245,7 +205,7 @@ export function renderKeyValueBox(
           const padded = padRight(seg, contentWidth);
           const out = dimFooter ? `\x1b[2m${padded}\x1b[22m` : padded;
           const content = `${" ".repeat(padding)}${out}${" ".repeat(padding)}`;
-          lines.push(border === "box" ? `│${content}│` : content);
+          lines.push(content);
         }
       }
     }
@@ -270,14 +230,13 @@ export function renderListBox(
   const padding = opts?.padding ?? 1;
   const dimOn = opts?.dimItems ?? false;
   const bullet = opts?.bullet ?? "• ";
-  const border = opts?.border ?? "box";
+  const border = opts?.border ?? "none";
   const titleAlign = opts?.titleAlign ?? "center";
-  const DIM = "\x1b[2m";
-  const RESET_DIM = "\x1b[22m";
+  const DIM = (s: string) => pc.dim(s);
 
   const rows = items.map((it) => bullet + toCell(it));
   const ttyWidth = Math.max(10, Math.min(200, opts?.maxWidth ?? getTTYWidth()));
-  const borderWidth = border === "box" ? 2 : 0;
+  const borderWidth = 0;
   const maxInside = Math.max(1, ttyWidth - borderWidth);
   // First, estimate width; then clamp to terminal
   const contentWidth = Math.max(
@@ -288,34 +247,30 @@ export function renderListBox(
   const estimatedInside = padding + contentWidth + padding;
   const insideWidth = Math.min(maxInside, Math.max(1, estimatedInside));
 
-  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
-  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
+  const top = "";
+  const bot = "";
 
   const lines: string[] = [];
   if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
-    const croppedTitle = cropVisible(opts.title, insideWidth);
+    const croppedTitle = cropAnsi(opts.title, insideWidth);
     const titleText = croppedTitle;
-    const titleLen = stripAnsi(croppedTitle).length;
+    const titleLen = stringWidth(croppedTitle);
     const left =
       titleAlign === "left"
         ? 0
         : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    lines.push(
-      border === "box"
-        ? `│${" ".repeat(left)}${titleText}${" ".repeat(right)}│`
-        : `${" ".repeat(left)}${titleText}${" ".repeat(right)}`,
-    );
+    lines.push(`${" ".repeat(left)}${titleText}${" ".repeat(right)}`);
   }
   for (const r of rows) {
     const allowed = Math.max(0, insideWidth - padding - padding);
-    const cropped = cropVisible(r, allowed);
-    const visibleLen = stripAnsi(cropped).length;
+    const cropped = cropAnsi(r, allowed);
+    const visibleLen = stringWidth(cropped);
     const rightPad = Math.max(0, allowed - visibleLen);
-    const text = dimOn ? `${DIM}${cropped}${RESET_DIM}` : cropped;
+    const text = dimOn ? DIM(cropped) : cropped;
     const content = `${" ".repeat(padding)}${text}${" ".repeat(rightPad)}${" ".repeat(padding)}`;
-    lines.push(border === "box" ? `│${content}│` : content);
+    lines.push(content);
   }
   if (bot) lines.push(bot);
   return lines.join("\n");
@@ -344,10 +299,9 @@ export function renderKeyValueGridBox(
   const colGap = Math.max(2, opts?.colGap ?? 2);
   const padding = Math.max(0, opts?.padding ?? 1);
   const dimOn = opts?.dimLabels ?? true;
-  const border = opts?.border ?? "box";
+  const border = opts?.border ?? "none";
   const titleAlign = opts?.titleAlign ?? "center";
-  const DIM = "\x1b[2m";
-  const RESET_DIM = "\x1b[22m";
+  const DIM = (s: string) => pc.dim(s);
 
   const data = pairs.map(
     ([k, v]) => [toCell(k), toCell(v)] as [string, string],
@@ -362,8 +316,8 @@ export function renderKeyValueGridBox(
       const idx = r * cols + c;
       if (idx >= data.length) continue;
       const [k, v] = data[idx];
-      labelW[c] = Math.max(labelW[c], stripAnsi(k).length);
-      valueW[c] = Math.max(valueW[c], stripAnsi(v).length);
+      labelW[c] = Math.max(labelW[c], stringWidth(k));
+      valueW[c] = Math.max(valueW[c], stringWidth(v));
     }
   }
   if (opts?.labelMax && opts.labelMax > 0) {
@@ -379,7 +333,7 @@ export function renderKeyValueGridBox(
   const colW = labelW.map((lw, i) => lw + gap + valueW[i]);
 
   // Fit into terminal width
-  const borderWidth = border === "box" ? 2 : 0; // left/right
+  const borderWidth = 0; // left/right
   const tty = Math.max(10, Math.min(200, opts?.maxWidth ?? getTTYWidth()));
   const maxInside = Math.max(1, tty - borderWidth);
   const staticSpaces = padding + (cols - 1) * colGap + padding;
@@ -411,24 +365,20 @@ export function renderKeyValueGridBox(
   }
 
   const insideWidth = staticSpaces + colW.reduce((a, b) => a + b, 0);
-  const top = border === "box" ? `╭${"─".repeat(insideWidth)}╮` : "";
-  const bot = border === "box" ? `╰${"─".repeat(insideWidth)}╯` : "";
+  const top = "";
+  const bot = "";
 
   const lines: string[] = [];
   if (top) lines.push(top);
   if (opts?.title && opts.title.length > 0) {
-    const croppedTitle = cropVisible(opts.title, insideWidth);
-    const titleLen = stripAnsi(croppedTitle).length;
+    const croppedTitle = cropAnsi(opts.title, insideWidth);
+    const titleLen = stringWidth(croppedTitle);
     const left =
       titleAlign === "left"
         ? 0
         : Math.max(0, Math.floor((insideWidth - titleLen) / 2));
     const right = Math.max(0, insideWidth - titleLen - left);
-    lines.push(
-      border === "box"
-        ? `│${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}│`
-        : `${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}`,
-    );
+    lines.push(`${" ".repeat(left)}${croppedTitle}${" ".repeat(right)}`);
   }
   for (let r = 0; r < rows; r++) {
     let rowText = "";
@@ -440,13 +390,13 @@ export function renderKeyValueGridBox(
         continue;
       }
       const [k, v] = data[idx];
-      const lab = padLeft(cropVisible(k, labelW[c]), labelW[c]);
-      const val = padRight(cropVisible(v, valueW[c]), valueW[c]);
-      const labOut = dimOn ? `${DIM}${lab}${RESET_DIM}` : lab;
+      const lab = padLeft(cropAnsi(k, labelW[c]), labelW[c]);
+      const val = padRight(cropAnsi(v, valueW[c]), valueW[c]);
+      const labOut = dimOn ? DIM(lab) : lab;
       rowText += labOut + " ".repeat(gap) + val;
     }
     const content = `${" ".repeat(padding)}${rowText}${" ".repeat(padding)}`;
-    lines.push(border === "box" ? `│${content}│` : content);
+    lines.push(content);
   }
   if (bot) lines.push(bot);
   return lines.join("\n");

@@ -10,6 +10,7 @@ import {
 export type HostContextLike = {
   os: z.infer<typeof HostOSSchema> | null;
   arch: z.infer<typeof HostArchSchema> | null;
+  hostname?: string | null;
   env: HostEnv;
   user: HostUser;
 };
@@ -212,7 +213,7 @@ export function evalMatchExpr(
     case "arch":
       return ctx.arch !== null && expr.values.includes(ctx.arch);
     case "hostname": {
-      const actual = osmod.hostname();
+      const actual = (ctx.hostname ?? osmod.hostname()) as string;
       const v = expr.value;
       if (typeof v === "string") return actual === v;
       const re = toRegExp(v.matches, v.flags);

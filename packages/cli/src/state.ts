@@ -13,14 +13,16 @@ export type SavedDecision = {
 export type LastPlan = {
   configPath: string;
   host: { os: string | null; arch: string | null; home: string | null };
-  at: string; // ISO timestamp
+  // Timestamp is optional; not required by the CLI
+  at?: string; // ISO timestamp (optional)
   decisions: SavedDecision[];
 };
 
 export type LastApply = {
   configPath: string;
   host: { os: string | null; arch: string | null; home: string | null };
-  at: string; // ISO timestamp
+  // Timestamp is optional; not required by the CLI
+  at?: string; // ISO timestamp (optional)
   applied: Array<{ id: string; kind: string; label: string; summary?: string }>; // items that were applied
 };
 

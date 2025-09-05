@@ -3,8 +3,12 @@ import { pathToFileURL } from "node:url";
 import { Manager } from "@dot-steward/core";
 import type { Command } from "commander";
 import { decisionsToSaved, hostKey, loadState, saveState } from "../state.ts";
-import { formatDecisionLine } from "../utils/planFormat.ts";
-import { renderListBox } from "../utils/table.ts";
+import logger from "../utils/logger.ts";
+import pc from "picocolors";
+import { renderPanelSections } from "../utils/ui.ts";
+import { buildPlanSections } from "../utils/planSections.ts";
+import { renderTreeSubsections } from "../utils/planTree.ts";
+// Removed table renderer for host details; we'll print a simple vertical list
 
 function resolveConfigToFileUrl(p: string): string {
   const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
@@ -29,10 +33,10 @@ export function registerPlan(program: Command): void {
       try {
         await mgr.init(cfgUrl);
       } catch (err) {
-        console.error(
+        logger.error(
           `Failed to load config from ${opts.config}. Try --config examples/config.ts`,
         );
-        if (err instanceof Error) console.error(err.message);
+        if (err instanceof Error) logger.error(err.message);
         process.exitCode = 1;
         return;
       }
@@ -42,16 +46,13 @@ export function registerPlan(program: Command): void {
       try {
         decisions = await mgr.plan();
       } catch (err) {
-        console.error("Plan failed during validation.");
+        logger.error("Plan failed during validation.");
         // Show actionable, per-item validation errors when available
         const isAgg =
           !!err &&
           typeof err === "object" &&
           "errors" in (err as Record<string, unknown>);
         if (isAgg) {
-          const RESET = "\x1b[0m";
-          const RED = "\x1b[31m";
-          const DIM = "\x1b[2m";
           const subErrors = (err as unknown as AggregateError).errors ?? [];
           for (const se of subErrors) {
             const msg = se instanceof Error ? se.message : String(se);
@@ -64,102 +65,47 @@ export function registerPlan(program: Command): void {
               const it = mgr.deps.nodes.get(id);
               if (it) label = it.render();
             }
-            console.error(
-              `${RED}! ${label}${RESET} ${DIM}->${RESET} ${detail}`,
-            );
+            logger.error(`${pc.red("!")} ${label} ${pc.dim("->")} ${detail}`);
           }
         } else if (err instanceof Error) {
-          console.error(err.message);
+          logger.error(err.message);
         }
         process.exitCode = 1;
         return;
       }
 
-      // Legend with colors (Terraform-like)
-      const RESET = "\x1b[0m";
-      const GREEN = "\x1b[32m"; // create
-      const RED = "\x1b[31m"; // destroy
-      const YELLOW = "\x1b[33m"; // modify
-      const DIM = "\x1b[2m"; // dim text / no op
-      const legendLine = `${GREEN}+ create${RESET}  ${RED}! destroy${RESET}  ${YELLOW}~ modify${RESET}  ${DIM}- no op${RESET}`;
-      console.log(
-        renderListBox([legendLine], {
-          title: `${DIM}legend${RESET}`,
-          bullet: "",
-          padding: 1,
-        }),
+      // Host details (printed first)
+      // Compose compact "env" and "user" lines
+      const envFlags = [
+        mgr.host.env.ci ? "ci" : "not ci",
+        mgr.host.env.devcontainer ? "devcontainer" : "not devcontainer",
+      ].join(", ");
+      const userName = String(mgr.host.user.name ?? "-");
+      const uidStr = String(mgr.host.user.uid ?? "-");
+      const gidStr = String(mgr.host.user.gid ?? "-");
+      const homeStr = String(mgr.host.user.home ?? "-");
+      const userLine = `${userName} (gid: ${gidStr}, uid: ${uidStr}, home: ${homeStr})`;
+
+      const hostLines: Array<[string, string]> = [
+        ["Hostname", String(mgr.host.hostname ?? "-")],
+        ["OS", String(mgr.host.os ?? "-")],
+        ["Arch", String(mgr.host.arch ?? "-")],
+        ["Shell", String(mgr.host.env.variables.SHELL ?? "-")],
+        ["Env", envFlags],
+        ["User", userLine],
+      ];
+      // Render host details in the same clack-like panel format
+      const labelWidth = Math.max(
+        0,
+        ...hostLines.map(([k]) => String(k).length),
       );
-      // Blank line below legend for spacing
-      console.log("");
+      const hostPanelLines = hostLines.map(([k, v]) => {
+        const label = String(k).padStart(labelWidth, " ");
+        return `${pc.dim(label)}  ${v}`;
+      });
 
-      const decisionById = new Map(
-        decisions.map((d) => [d.item.id, d] as const),
-      );
-
-      // Render a concise Plugins section before profiles
-      if (mgr.plugins.length > 0) {
-        console.log("Plugins:");
-        for (const plg of mgr.plugins) {
-          const dec = decisionById.get(plg.id);
-          let label = plg.render();
-          // Default to no-op if no explicit decision found
-          const action = dec?.action ?? "noop";
-          let sym = "-";
-          let color = DIM;
-          if (action === "apply") {
-            sym = "+";
-            color = GREEN;
-          } else if (action === "skip") {
-            sym = "-";
-            color = DIM;
-          }
-          // Usage: how many items depend on this plugin in the active graph
-          const usedBy = mgr.deps.outgoing.get(plg.id)?.size ?? 0;
-          const usageNote = ` ${DIM}(used by ${usedBy})${RESET}`;
-          // Append reason for skips when available
-          let reasonNote = "";
-          if (dec?.action === "skip" && dec.reason) {
-            const summary = dec.details?.summary;
-            const dup = summary?.includes(dec.reason);
-            reasonNote = dup ? "" : ` ${DIM}(${dec.reason})${RESET}`;
-          }
-          // Add explicit [skip] prefix for skipped plugins when not already indicated
-          if (action === "skip" && !label.trim().startsWith("[skip]")) {
-            label = `[skip] ${label}`;
-          }
-          console.log(
-            `${color}${sym} ${label}${usageNote}${reasonNote}${RESET}`,
-          );
-        }
-        // Spacer between plugins and profiles
-        console.log("");
-      }
-
-      // Render all profiles in order
-      for (const p of mgr.profiles) {
-        const matched = mgr.host.evaluateMatch(p.matches);
-        // Styled header: dim "profile:" and bold profile name
-        const BOLD = "\x1b[1m";
-        const title = `${DIM}profile:${RESET}${BOLD}${p.name}${RESET}`;
-        if (!matched) {
-          console.log(`${title} — ${DIM}no match${RESET}`);
-          console.log("");
-          continue;
-        }
-        console.log(title);
-        // Items for this profile (even if some are incompatible at item level)
-        for (const it of p.items) {
-          const dec = decisionById.get(it.id);
-          if (!dec) {
-            const label = it.render();
-            console.log(`${DIM}- ${label} (not considered)${RESET}`);
-            continue;
-          }
-          console.log(formatDecisionLine(dec));
-        }
-        // Blank line after items for this profile
-        console.log("");
-      }
+      // One-shot plan; we will render a clack-like panel below
+      decisions = await mgr.plan();
 
       // Persist last plan for later use by `apply`
       try {
@@ -167,13 +113,41 @@ export function registerPlan(program: Command): void {
         st.lastPlan = {
           configPath: opts.config,
           host: hostKey(mgr),
-          at: new Date().toISOString(),
           decisions: decisionsToSaved(decisions),
         };
         await saveState(st);
       } catch {
         // ignore errors on saving state
       }
+
+      // Render grouped preview as part of the original gutter
+      const planSections = buildPlanSections(mgr, decisions);
+      const legend = `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
+      const planLines = [
+        legend,
+        "",
+        ...renderTreeSubsections(planSections),
+      ];
+      const panel = renderPanelSections([
+        { title: "Host Details", lines: hostPanelLines },
+        { title: "Plan", lines: planLines },
+      ]);
+      // Build summary counts and append to the corner line
+      const plus = decisions.filter((d) => d.action === "apply").length;
+      const minus = decisions.filter((d) => d.action === "noop").length;
+      const tilde = decisions.filter((d) => d.action === "skip").length;
+      const bang = 0; // destroy not tracked in current engine
+      const sep = ` ${pc.dim("|")} `;
+      const summary = `${pc.green("+")} ${plus}${sep}${pc.red("!")} ${bang}${sep}${pc.yellow("~")} ${tilde}${sep}${pc.dim("-")} ${minus}`;
+      const linesOut = panel.split("\n");
+      // Replace the closing corner with a summary line
+      if (linesOut.length > 0 && linesOut[linesOut.length - 1].trim() === "└") {
+        linesOut.pop();
+        linesOut.push("│");
+        // Use rounded-corner with horizontal for final plan summary
+        linesOut.push(`├─  ${summary}`);
+      }
+      logger.log(linesOut.join("\n"));
 
       // Done
     });
