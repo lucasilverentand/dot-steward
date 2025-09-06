@@ -45,3 +45,27 @@ export default config({ profiles });
 ```
 
 Note: Profiles apply if their `match` evaluates true (or if `match` is omitted). Matched profiles are applied in order of appearance.
+
+## Inputs with Zod (advanced)
+Profiles can declare inputs using a Zod schema. Defaults live in the schema; the `items` builder receives a typed `input` object.
+
+```ts
+import { config, profile, os } from "@dot-steward/core";
+import { z } from "zod";
+
+const mac = profile({
+  name: "mac",
+  matches: os("darwin"),
+  inputs: z.object({
+    browser: z.enum(["chrome", "firefox"]).default("chrome"),
+    devtools: z.boolean().default(true),
+  }),
+  items: ({ input, when }) => [
+    ...when(input.browser === "chrome", /* ... */),
+    ...when(input.browser === "firefox", /* ... */),
+    ...when(input.devtools, /* dev tools items */),
+  ],
+});
+
+export default config({ profiles: [mac] });
+```

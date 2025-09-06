@@ -32,23 +32,24 @@ await mgr.apply();
 ```
 
 ## Profile Inputs and Conditional Composition
-Profiles can declare inputs and build items conditionally based on those inputs. Inputs can have defaults. No environment-variable sourcing is used here.
+Profiles declare inputs using a Zod schema and build items conditionally based on those inputs. Defaults are defined in the Zod schema.
 
 ```ts
 import { profile, os } from "@dot-steward/core";
+import { z } from "zod";
 import { brew } from "@dot-steward/plugin-brew";
 
 const workstation = profile({
   name: "workstation",
   matches: os("darwin"),
-  inputs: {
-    browser: { type: "select", choices: ["chrome", "firefox"], default: "chrome" },
-    devtools: { type: "boolean", default: true },
-  },
+  inputs: z.object({
+    browser: z.enum(["chrome", "firefox"]).default("chrome"),
+    devtools: z.boolean().default(true),
+  }),
   items: ({ input, when }) => [
     ...when(input.browser === "chrome", brew.cask("google-chrome")),
     ...when(input.browser === "firefox", brew.cask("firefox")),
-    ...when(!!input.devtools, [brew.formula("git"), brew.formula("node")]),
+    ...when(input.devtools, [brew.formula("git"), brew.formula("node")]),
   ],
 });
 ```

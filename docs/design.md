@@ -50,7 +50,11 @@ Bundles of packages, configs, and managed items. Apps are composable and platfor
 
 ## 4. Profiles
 
-Profiles are named config units. They can include other profiles, define variables, apps, plugins, and items. Profiles apply when their `match` evaluates true. Order of application follows the order of appearance in the config.
+Profiles are named config units. They can include other profiles, define inputs, apps, plugins, and items. Profiles apply when their `match` evaluates true. Order of application follows the order of appearance in the config.
+
+- Inputs: Declared via a Zod schema (typically a `z.object({...})`). Defaults and validation are handled by Zod.
+- Composition: `items` can be a function receiving `{ input, when }` where `input` is `z.infer<typeof inputs>`.
+- Determinism: `when(cond, ...)` is a helper to include items conditionally while keeping order explicit.
 
 ---
 

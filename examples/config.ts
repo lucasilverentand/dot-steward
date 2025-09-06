@@ -1,29 +1,21 @@
 import { os, all, any, config, hostname, profile } from "@dot-steward/core";
+import { z } from "zod";
+import { appStore } from "../plugins/app-store/src";
 import { brew } from "../plugins/brew/src";
 import { file } from "../plugins/file/src";
-import { shell } from "../plugins/shell/src";
-import { appStore } from "../plugins/app-store/src";
 import { mac_settings } from "../plugins/macos-settings/src";
+import { shell } from "../plugins/shell/src";
 
 // Homebrew casks no longer require tapping; use brew.cask directly
 
 const mac_base = profile({
   name: "mac-base",
   matches: os("darwin"),
-  // Inputs allow composing items conditionally
-  inputs: {
-    browser: {
-      type: "select",
-      choices: ["chrome", "firefox"],
-      default: "chrome",
-      description: "Preferred browser to install",
-    },
-    include_hand_mirror: {
-      type: "boolean",
-      default: false,
-      description: "Install Hand Mirror from the App Store",
-    },
-  },
+  // Inputs allow composing items conditionally (Zod schema)
+  inputs: z.object({
+    browser: z.enum(["chrome", "firefox"]).default("chrome"),
+    include_hand_mirror: z.boolean().default(false),
+  }),
   items: ({ input, when }) => [
     brew.formula("cowsay"),
     // Choose browser via input
@@ -59,7 +51,10 @@ const mac_base = profile({
 
 const mac_dev = profile({
   name: "mac-dev",
-  matches: all(os("darwin"), any(hostname("mac"), hostname("macbook-air-luca"))),
+  matches: all(
+    os("darwin"),
+    any(hostname("mac"), hostname("macbook-air-luca")),
+  ),
   items: [brew.formula("git")],
 });
 
