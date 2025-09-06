@@ -8,12 +8,13 @@ export function buildLegendLine(): string {
 }
 
 export function computeSummaryFromDecisions(decisions: PlanDecision[]): SummaryCounts {
-  return {
-    plus: decisions.filter((d) => d.action === "apply").length,
-    minus: decisions.filter((d) => d.action === "noop").length,
-    tilde: decisions.filter((d) => d.action === "skip").length,
-    bang: 0, // not tracked in current engine
-  };
+  const isUpdate = (d: PlanDecision): boolean =>
+    typeof d.details?.summary === "string" &&
+    /^\s*\[(update|modify)\]/i.test(d.details.summary);
+  const plus = decisions.filter((d) => d.action === "apply" && !isUpdate(d)).length;
+  const tilde = decisions.filter((d) => d.action === "apply" && isUpdate(d)).length;
+  const minus = decisions.filter((d) => d.action === "noop").length;
+  return { plus, minus, tilde, bang: 0 };
 }
 
 export function buildSummaryLine(counts: SummaryCounts): string {
@@ -40,4 +41,3 @@ export function appendSummaryToPanel(
   }
   return lines.join("\n");
 }
-

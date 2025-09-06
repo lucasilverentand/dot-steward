@@ -10,10 +10,25 @@ import { mac_settings } from "../plugins/macos-settings/src";
 const mac_base = profile({
   name: "mac-base",
   matches: os("darwin"),
-  items: [
+  // Inputs allow composing items conditionally
+  inputs: {
+    browser: {
+      type: "select",
+      choices: ["chrome", "firefox"],
+      default: "chrome",
+      description: "Preferred browser to install",
+    },
+    include_hand_mirror: {
+      type: "boolean",
+      default: false,
+      description: "Install Hand Mirror from the App Store",
+    },
+  },
+  items: ({ input, when }) => [
     brew.formula("cowsay"),
-    brew.cask("google-chrome"),
-    brew.cask("firefox"),
+    // Choose browser via input
+    ...when(input.browser === "chrome", brew.cask("google-chrome")),
+    ...when(input.browser === "firefox", brew.cask("firefox")),
     // Example: compose YAML config written to user's home
     file.yaml(
       ".config/dot-steward/app.yaml",
@@ -34,11 +49,12 @@ const mac_base = profile({
       mouse: { speed: 0.5 },
       dock: { autohide: true },
     }),
-    // Example: install a Mac App Store app by id (requires 'mas' CLI)
-    // You must be signed into the App Store in the GUI once.
-    // Replace with your preferred app id.
-    // appStore.app(1502839586, { name: "Hand Mirror" }),
-  ].flat(),
+    // Optional: install a Mac App Store app when enabled
+    ...when(
+      !!input.include_hand_mirror,
+      appStore.app(1502839586, { name: "Hand Mirror" }),
+    ),
+  ],
 });
 
 const mac_dev = profile({

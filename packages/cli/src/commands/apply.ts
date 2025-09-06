@@ -357,20 +357,9 @@ export function registerApply(program: Command): void {
         return;
       }
 
-      // Decide whether to reuse last plan
-      const st = await loadState();
-      const last = st.lastPlan;
+      // Removed: loading a saved plan from plan mode. Always compute a fresh plan.
       let useSavedPlan = false;
-      if (
-        last &&
-        last.configPath === opts.config &&
-        last.host.os === mgr.host.os &&
-        last.host.arch === mgr.host.arch &&
-        last.host.home === mgr.host.user.home
-      ) {
-        // Prompt only; do not reprint Host Details when using a saved plan
-        useSavedPlan = await askConfirm("Load plan from plan mode?");
-      }
+      const last: any = undefined;
 
       let result: ApplyResult | null = null;
       // Track whether we showed live progress (so we can avoid duplicate final summary)
@@ -383,7 +372,7 @@ export function registerApply(program: Command): void {
       let decisions: Decisions | null = null;
 
       // Styling via picocolors (pc)
-      if (useSavedPlan && last) {
+      if (false) {
         // Reconstruct all saved decisions once; use for preview and apply
         const reconstructed: PlanDecision[] = await reconstructSavedDecisions(
           mgr,
@@ -970,15 +959,13 @@ export function registerApply(program: Command): void {
 
       // Persist lastApply details for future cleanup decisions
       try {
-        const chosenApplied = (
-          useSavedPlan && last
-            ? last.decisions
-            : result.plan.map((d) => ({
-                item_id: d.item.id,
-                action: d.action,
-                summary: d.details?.summary,
-              }))
-        ).filter((d) => d.action === "apply" || d.action === "noop");
+        const chosenApplied = result.plan
+          .map((d) => ({
+            item_id: d.item.id,
+            action: d.action,
+            summary: d.details?.summary,
+          }))
+          .filter((d) => d.action === "apply" || d.action === "noop");
         // Build id -> profile name map for current config
         const idToProfile = new Map<string, string>();
         for (const p of mgr.profiles) {

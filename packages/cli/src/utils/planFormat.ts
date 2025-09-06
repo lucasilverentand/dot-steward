@@ -5,12 +5,20 @@ export type PlanDecision = Awaited<ReturnType<Manager["plan"]>>[number];
 export function formatDecisionLine(dec: PlanDecision): string {
   const RESET = "\x1b[0m";
   const GREEN = "\x1b[32m";
+  const YELLOW = "\x1b[33m";
   const DIM = "\x1b[2m";
   let sym = "-";
   let color = DIM;
+  const summary = dec.details?.summary || "";
+  const isUpdate = typeof summary === "string" && /^\s*\[(update|modify)\]/i.test(summary);
   if (dec.action === "apply") {
-    sym = "+";
-    color = GREEN;
+    if (isUpdate) {
+      sym = "~";
+      color = YELLOW;
+    } else {
+      sym = "+";
+      color = GREEN;
+    }
   } else if (dec.action === "noop") {
     sym = "-";
     color = DIM;
@@ -18,7 +26,6 @@ export function formatDecisionLine(dec: PlanDecision): string {
     sym = "-";
     color = DIM;
   }
-  const summary = dec.details?.summary;
   const label = dec.item.render();
   // Ensure a clear skip indicator when action is skip
   let content = summary ? summary : label;
