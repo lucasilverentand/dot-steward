@@ -1,6 +1,7 @@
 import { Manager } from "@dot-steward/core";
 import type { Command } from "commander";
 import resolveConfigToFileUrl from "../utils/config.ts";
+import pc from "picocolors";
 
 export function registerUpgrade(program: Command): void {
   program
@@ -35,6 +36,7 @@ export function registerUpgrade(program: Command): void {
       const RESET = "\x1b[0m";
 
       const line = (s: string) => process.stdout.write(`${s}\n`);
+      let upgradedCount = 0;
       mgr.events.on("item:upgrade_start", (p) => {
         const title = p.name ? `${p.kind} ${p.name}` : p.kind;
         line(`${YELLOW}… checking ${title}${RESET}`);
@@ -46,6 +48,7 @@ export function registerUpgrade(program: Command): void {
       mgr.events.on("item:upgrade_done", (p) => {
         const title = p.name ? `${p.kind} ${p.name}` : p.kind;
         line(`${GREEN}✓ upgraded ${title}${RESET}`);
+        upgradedCount++;
       });
       mgr.events.on("item:upgrade_error", (p) => {
         const title = p.name ? `${p.kind} ${p.name}` : p.kind;
@@ -61,6 +64,12 @@ export function registerUpgrade(program: Command): void {
         if (err instanceof Error) console.error(err.message);
         process.exitCode = 1;
         return;
+      }
+
+      // If nothing was upgraded, show a concise corner message like apply
+      if (upgradedCount === 0) {
+        console.log("│");
+        console.log(`╰─  ${pc.dim("Nothing to upgrade. All items are up-to-date.")}`);
       }
     });
 }

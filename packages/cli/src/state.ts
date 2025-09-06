@@ -23,7 +23,13 @@ export type LastApply = {
   host: { os: string | null; arch: string | null; home: string | null };
   // Timestamp is optional; not required by the CLI
   at?: string; // ISO timestamp (optional)
-  applied: Array<{ id: string; kind: string; label: string; summary?: string }>; // items that were applied
+  applied: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    summary?: string;
+    profile?: string; // profile name for grouping removals inline
+  }>; // items that were applied or desired (includes noop)
 };
 
 export type CLIState = {

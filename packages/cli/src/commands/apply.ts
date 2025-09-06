@@ -16,6 +16,8 @@ import { appendSummaryToPanel, buildLegendLine, buildSummaryLine, computeSummary
 import { collectAggregateErrors } from "../utils/errors.ts";
 import pc from "picocolors";
 import { buildHostPanelLines } from "../utils/host.ts";
+import { computeRemovedSinceLastApply, formatRemovalsSection, buildRemovalLinesByProfile } from "../utils/removals.ts";
+import { buildRemovalTasks, runRemovalTasksWithUI } from "../utils/removalTasks.ts";
 
 type PlannedLabel = { id: string; title: string };
 
@@ -125,7 +127,7 @@ async function askConfirm(message: string): Promise<boolean> {
 async function applyWithListr(
   mgr: Manager,
   planned: PlannedLabel[],
-  opts: { skipUpdates?: boolean },
+  opts: { skipUpdates?: boolean; forceApply?: boolean },
   summaryCounts?: SummaryCounts,
 ): Promise<void> {
   // Manual, clack-like live renderer (no Listr). We mirror the style used elsewhere.
@@ -299,7 +301,7 @@ async function applyWithListr(
 
   let applyErr: unknown = null;
   const applyPromise = mgr
-    .apply({ skipUpdates: !!opts.skipUpdates })
+    .apply({ skipUpdates: !!opts.skipUpdates, forceApply: !!opts.forceApply })
     .catch((e) => {
       applyErr = e;
     })
@@ -340,7 +342,8 @@ export function registerApply(program: Command): void {
       "dot-steward.config.ts",
     )
     .option("--skip-updates", "Skip upgrade checks for already-installed items")
-    .action(async (opts: { config: string; skipUpdates?: boolean }) => {
+    .option("-f, --force", "Force re-run apply for already-applied items")
+    .action(async (opts: { config: string; skipUpdates?: boolean; force?: boolean }) => {
       const mgr = new Manager();
       const cfgUrl = resolveConfigToFileUrl(opts.config);
       try {
@@ -374,6 +377,8 @@ export function registerApply(program: Command): void {
       let usedLiveRenderer = false;
       // Track whether we actually performed an apply (user confirmed)
       let actuallyApplied = false;
+      // Track if the user confirmed to proceed (applies or removals)
+      let userConfirmed = false;
       type Decisions = Awaited<ReturnType<typeof mgr.plan>>;
       let decisions: Decisions | null = null;
 
@@ -384,6 +389,59 @@ export function registerApply(program: Command): void {
           mgr,
           last.decisions,
         );
+
+        // Consider removals as work too
+        let removedSavedCount = 0;
+        try {
+          const stNow = await loadState();
+          const removedSaved = computeRemovedSinceLastApply(
+            mgr,
+            reconstructed,
+            stNow.lastApply,
+            opts.config,
+          );
+          removedSavedCount = removedSaved.length;
+        } catch {
+          removedSavedCount = 0;
+        }
+        // If there is nothing to apply and nothing to remove, exit early
+        const toApplySaved = reconstructed.filter((d) => d.action === "apply").length;
+        if (toApplySaved === 0 && removedSavedCount === 0) {
+          logger.log("│");
+          logger.log(`╰─  ${pc.dim("Nothing to do. All items are up-to-date.")}`);
+          // Persist lastApply even on no-op to capture host/config context
+          try {
+            const chosenApplied = reconstructed
+              .filter((d) => d.action === "apply" || d.action === "noop")
+              .map((d) => ({
+                item_id: d.item.id,
+                action: d.action,
+                summary: d.details?.summary,
+              }));
+            // Build id -> profile name map for current config
+            const idToProfile = new Map<string, string>();
+            for (const p of mgr.profiles) {
+              for (const it of p.items) idToProfile.set(it.id, p.name);
+            }
+            const applied = chosenApplied.map((d) => {
+              const it = mgr.deps.nodes.get(d.item_id);
+              const label = it ? it.render() : String(d.item_id);
+              const kind = it ? it.kind : "item";
+              const profile = idToProfile.get(d.item_id);
+              return { id: d.item_id, kind, label, summary: d.summary, profile };
+            });
+            const state = await loadState();
+            state.lastApply = {
+              configPath: opts.config,
+              host: hostKey(mgr),
+              applied,
+            };
+            await saveState(state);
+          } catch {
+            // ignore save errors
+          }
+          return;
+        }
         // Use saved plan for display; still run analyze+apply freshly
         // (analyze step removed)
         // Print the old (saved) plan for confirmation, matching `plan` formatting
@@ -391,16 +449,132 @@ export function registerApply(program: Command): void {
           // Plan preview sections/tree
           const planSections = buildPlanSections(mgr, reconstructed);
           const planLines = [buildLegendLine(), "", ...renderTreeSubsections(planSections)];
+          // Include removals preview
+          let sections = [{ title: "Plan", lines: planLines }];
+          try {
+            const stNow = await loadState();
+            const removed = computeRemovedSinceLastApply(
+              mgr,
+              reconstructed,
+              stNow.lastApply,
+              opts.config,
+            );
+            const rem = formatRemovalsSection(removed);
+            if (rem) sections = [...sections, rem];
+          } catch {
+            // ignore
+          }
           // When reusing a saved plan, we intentionally skip Host Details;
           // only render the confirmation panel here.
-          const panel = renderPanelSections([{ title: "Plan", lines: planLines }]);
-          const summary = buildSummaryLine(computeSummaryFromDecisions(reconstructed));
+          const panel = renderPanelSections(sections);
+          const baseSummary = computeSummaryFromDecisions(reconstructed);
+          let summary = buildSummaryLine(baseSummary);
+          try {
+            const stNow = await loadState();
+            const removed = computeRemovedSinceLastApply(
+              mgr,
+              reconstructed,
+              stNow.lastApply,
+              opts.config,
+            );
+            summary = buildSummaryLine({ ...baseSummary, bang: removed.length });
+          } catch {
+            // ignore
+          }
           // In apply mode, show branch to indicate follow-up prompt
           const withSummary = appendSummaryToPanel(panel, summary, "branch");
           logger.log(withSummary);
         }
         // Confirm apply using the saved plan preview above
-        const proceed = await askConfirm("Apply this plan?");
+        {
+          let removedCountForPrompt = 0;
+          try {
+            const stNow = await loadState();
+            const removed = computeRemovedSinceLastApply(
+              mgr,
+              reconstructed,
+              stNow.lastApply,
+              opts.config,
+            );
+            removedCountForPrompt = removed.length;
+          } catch {
+            removedCountForPrompt = 0;
+          }
+          const toApplySavedCount = reconstructed.filter((d) => d.action === "apply").length;
+          const promptMsg =
+            toApplySavedCount > 0 && removedCountForPrompt > 0
+              ? `Apply changes and remove ${removedCountForPrompt} item(s)?`
+              : toApplySavedCount > 0
+                ? "Apply this plan?"
+                : `Remove ${removedCountForPrompt} item(s)?`;
+        const proceed = await askConfirm(promptMsg);
+        userConfirmed = proceed;
+        if (!proceed) {
+            // Add a spacer line with the gutter before the aborted message
+            logger.log("│");
+            logger.log(`╰─  ${pc.dim("Aborted. No changes applied.")}`);
+            // Use reconstructed decisions to build a pseudo-result for summary
+            result = {
+              plan: reconstructed,
+              stats: {
+                items: reconstructed.length,
+                to_apply: reconstructed.filter((d) => d.action === "apply").length,
+                skipped: reconstructed.filter((d) => d.action === "skip").length,
+                noop: reconstructed.filter((d) => d.action === "noop").length,
+              },
+              errors: [],
+            };
+          } else {
+          // Apply using saved planned items with live progress
+          const plannedList = reconstructed
+            .filter((d) => (opts.force ? d.action !== "skip" : d.action === "apply"))
+            .map((d) => ({
+              id: d.item.id,
+              title: d.details?.summary ?? d.item.render(),
+            }));
+          try {
+            if (plannedList.length > 0) {
+              usedLiveRenderer = true;
+              const plus = plannedList.length;
+              const minus = reconstructed.filter((d) => d.action === "noop").length;
+              const tilde = reconstructed.filter((d) => d.action === "skip").length;
+              await applyWithListr(
+                mgr,
+                plannedList,
+                { skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force },
+                { plus, minus, tilde, bang: 0 },
+              );
+            } else {
+              await mgr.apply({ skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force });
+            }
+              actuallyApplied = true;
+              result = {
+                plan: reconstructed,
+                stats: {
+                  items: reconstructed.length,
+                  to_apply: plannedList.length,
+                  skipped: reconstructed.filter((d) => d.action === "skip").length,
+                  noop: reconstructed.filter((d) => d.action === "noop").length,
+                },
+                errors: [],
+              };
+            } catch (err) {
+              logger.error("Apply failed.");
+              const errors = collectAggregateErrors(err);
+              result = {
+                plan: reconstructed,
+                stats: {
+                  items: reconstructed.length,
+                  to_apply: plannedList.length,
+                  skipped: reconstructed.filter((d) => d.action === "skip").length,
+                  noop: reconstructed.filter((d) => d.action === "noop").length,
+                },
+                errors,
+              };
+            }
+          }
+        }
+        userConfirmed = proceed;
         if (!proceed) {
           // Add a spacer line with the gutter before the aborted message
           logger.log("│");
@@ -419,7 +593,7 @@ export function registerApply(program: Command): void {
         } else {
           // Apply using saved planned items with live progress
           const plannedList = reconstructed
-            .filter((d) => d.action === "apply")
+            .filter((d) => (opts.force ? d.action !== "skip" : d.action === "apply"))
             .map((d) => ({
               id: d.item.id,
               title: d.details?.summary ?? d.item.render(),
@@ -433,11 +607,11 @@ export function registerApply(program: Command): void {
               await applyWithListr(
                 mgr,
                 plannedList,
-                { skipUpdates: !!opts.skipUpdates },
+                { skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force },
                 { plus, minus, tilde, bang: 0 },
               );
             } else {
-              await mgr.apply({ skipUpdates: !!opts.skipUpdates });
+              await mgr.apply({ skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force });
             }
             actuallyApplied = true;
             result = {
@@ -496,18 +670,104 @@ export function registerApply(program: Command): void {
           return;
         }
 
+        // Consider removals as work too
+        let removedCount = 0;
+        try {
+          const stNow = await loadState();
+          const removed = computeRemovedSinceLastApply(
+            mgr,
+            decisions,
+            stNow.lastApply,
+            opts.config,
+          );
+          removedCount = removed.length;
+        } catch {
+          removedCount = 0;
+        }
+        // If there is nothing to apply or remove, exit early (unless force)
+        const toApplyCount = decisions.filter((d) => d.action === "apply").length;
+        if (!opts.force && toApplyCount === 0 && removedCount === 0) {
+          logger.log("│");
+          logger.log(`╰─  ${pc.dim("Nothing to do. All items are up-to-date.")}`);
+          // Persist lastApply even on no-op to capture host/config context
+          try {
+            const chosenApplied = decisions
+              .filter((d) => d.action === "apply" || d.action === "noop")
+              .map((d) => ({
+                item_id: d.item.id,
+                action: d.action,
+                summary: d.details?.summary,
+              }));
+            // Build id -> profile name map for current config
+            const idToProfile = new Map<string, string>();
+            for (const p of mgr.profiles) {
+              for (const it of p.items) idToProfile.set(it.id, p.name);
+            }
+            const applied = chosenApplied.map((d) => {
+              const it = mgr.deps.nodes.get(d.item_id);
+              const label = it ? it.render() : String(d.item_id);
+              const kind = it ? it.kind : "item";
+              const profile = idToProfile.get(d.item_id);
+              return { id: d.item_id, kind, label, summary: d.summary, profile };
+            });
+            const state = await loadState();
+            state.lastApply = {
+              configPath: opts.config,
+              host: hostKey(mgr),
+              applied,
+            };
+            await saveState(state);
+          } catch {
+            // ignore save errors
+          }
+          return;
+        }
+
         // Render clack-like panel title with items listed below
         {
           // Host details
           const hostPanelLines = buildHostPanelLines(mgr);
           // Apply preview
           const planSections = buildPlanSections(mgr, decisions);
+          // Inject removals inline under matching profile sections
+          try {
+            const st = await loadState();
+            const removed = computeRemovedSinceLastApply(mgr, decisions, st.lastApply, opts.config);
+            if (removed.length > 0) {
+              const byProf = buildRemovalLinesByProfile(removed);
+              for (const section of planSections) {
+                if (!section.title.startsWith("Profile:")) continue;
+                const nameMatch = section.title.match(/^Profile:\s+([^\s].*?)(\s{2,}|$)/);
+                const profName = nameMatch?.[1];
+                if (!profName) continue;
+                const extra = byProf.get(profName);
+                if (extra && extra.length > 0) section.lines.push(...extra);
+              }
+              const leftovers = byProf.get("(previous)") || [];
+              if (leftovers.length > 0) planSections.push({ title: "Profile: (previous)", lines: leftovers });
+            }
+          } catch {
+            // ignore
+          }
           const planLines = [buildLegendLine(), "", ...renderTreeSubsections(planSections)];
           const panel = renderPanelSections([
             { title: "Host Details", lines: hostPanelLines },
             { title: "Plan", lines: planLines },
           ]);
-          const summary = buildSummaryLine(computeSummaryFromDecisions(decisions));
+          const baseSummary = computeSummaryFromDecisions(decisions);
+          let summary = buildSummaryLine(baseSummary);
+          try {
+            const stNow = await loadState();
+            const removed = computeRemovedSinceLastApply(
+              mgr,
+              decisions,
+              stNow.lastApply,
+              opts.config,
+            );
+            summary = buildSummaryLine({ ...baseSummary, bang: removed.length });
+          } catch {
+            // ignore
+          }
           const withSummary = appendSummaryToPanel(panel, summary, "branch");
           logger.log(withSummary);
         }
@@ -525,61 +785,39 @@ export function registerApply(program: Command): void {
           // ignore state save errors
         }
 
-        // Confirm apply (prompt follows the same wording)
-        const proceed = await askConfirm("Apply this plan?");
+        // Confirm apply/removal
+        let removedCountForPrompt = 0;
+        try {
+          const stNow = await loadState();
+          const removed = computeRemovedSinceLastApply(
+            mgr,
+            decisions,
+            stNow.lastApply,
+            opts.config,
+          );
+          removedCountForPrompt = removed.length;
+        } catch {
+          removedCountForPrompt = 0;
+        }
+        {
+          const toApplyCount2 = opts.force
+            ? decisions.filter((d) => d.action !== "skip").length
+            : decisions.filter((d) => d.action === "apply").length;
+          const promptMsg =
+            toApplyCount2 > 0 && removedCountForPrompt > 0
+              ? (opts.force
+                  ? `Re-apply ${toApplyCount2} item(s) and remove ${removedCountForPrompt} item(s)?`
+                  : `Apply changes and remove ${removedCountForPrompt} item(s)?`)
+              : toApplyCount2 > 0
+                ? (opts.force ? `Re-apply ${toApplyCount2} item(s)?` : "Apply this plan?")
+                : `Remove ${removedCountForPrompt} item(s)?`;
+        const proceed = await askConfirm(promptMsg);
+        userConfirmed = proceed;
         if (!proceed) {
-          // Add a spacer line with the gutter before the aborted message
-          logger.log("│");
-          logger.log(`╰─  ${pc.dim("Aborted. No changes applied.")}`);
-          // Build a pseudo-result so the summary section below still renders
-          result = {
-            plan: decisions,
-            stats: {
-              items: decisions.length,
-              to_apply: decisions.filter((d) => d.action === "apply").length,
-              skipped: decisions.filter((d) => d.action === "skip").length,
-              noop: decisions.filter((d) => d.action === "noop").length,
-            },
-            errors: [],
-          };
-        } else {
-          // Apply using the plan context already computed with live progress
-          const toApply = decisions.filter((d) => d.action === "apply");
-          const plannedList = toApply.map((d) => ({
-            id: d.item.id,
-            title: d.details?.summary ?? d.item.render(),
-          }));
-          try {
-            if (plannedList.length > 0) {
-              usedLiveRenderer = true;
-              const plus = toApply.length;
-              const minus = decisions.filter((d) => d.action === "noop").length;
-              const tilde = decisions.filter((d) => d.action === "skip").length;
-              await applyWithListr(
-                mgr,
-                plannedList,
-                { skipUpdates: !!opts.skipUpdates },
-                { plus, minus, tilde, bang: 0 },
-              );
-            } else {
-              await mgr.apply({ skipUpdates: !!opts.skipUpdates });
-            }
-            actuallyApplied = true;
-            const planNow = decisions ?? ([] as Decisions);
-            result = {
-              plan: planNow,
-              stats: {
-                items: planNow.length,
-                to_apply: toApply.length,
-                skipped: decisions.filter((d) => d.action === "skip").length,
-                noop: decisions.filter((d) => d.action === "noop").length,
-              },
-              errors: [],
-            };
-          } catch (err) {
-            logger.error("Apply failed.");
-            // Collect apply errors for display in the summary section
-            const errors = collectAggregateErrors(err);
+            // Add a spacer line with the gutter before the aborted message
+            logger.log("│");
+            logger.log(`╰─  ${pc.dim("Aborted. No changes applied.")}`);
+            // Build a pseudo-result so the summary section below still renders
             result = {
               plan: decisions,
               stats: {
@@ -588,8 +826,71 @@ export function registerApply(program: Command): void {
                 skipped: decisions.filter((d) => d.action === "skip").length,
                 noop: decisions.filter((d) => d.action === "noop").length,
               },
-              errors,
+              errors: [],
             };
+          } else {
+            // Apply using the plan context already computed with live progress
+            const toApply = decisions.filter((d) => (opts.force ? d.action !== "skip" : d.action === "apply"));
+            const plannedList = toApply.map((d) => ({
+              id: d.item.id,
+              title: d.details?.summary ?? d.item.render(),
+            }));
+            try {
+              if (plannedList.length > 0) {
+                usedLiveRenderer = true;
+                const plus = toApply.length;
+                const minus = decisions.filter((d) => d.action === "noop").length;
+                const tilde = decisions.filter((d) => d.action === "skip").length;
+                // Compute removals compared to last apply (same host/config)
+                let bang = 0;
+                try {
+                  const st2 = await loadState();
+                  const removed = computeRemovedSinceLastApply(
+                    mgr,
+                    decisions,
+                    st2.lastApply,
+                    opts.config,
+                  );
+                  bang = removed.length;
+                } catch {
+                  bang = 0;
+                }
+                await applyWithListr(
+                  mgr,
+                  plannedList,
+                  { skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force },
+                  { plus, minus, tilde, bang },
+                );
+              } else {
+                await mgr.apply({ skipUpdates: !!opts.skipUpdates, forceApply: !!opts.force });
+              }
+              actuallyApplied = true;
+              const planNow = decisions ?? ([] as Decisions);
+              result = {
+                plan: planNow,
+                stats: {
+                  items: planNow.length,
+                  to_apply: toApply.length,
+                  skipped: decisions.filter((d) => d.action === "skip").length,
+                  noop: decisions.filter((d) => d.action === "noop").length,
+                },
+                errors: [],
+              };
+            } catch (err) {
+              logger.error("Apply failed.");
+              // Collect apply errors for display in the summary section
+              const errors = collectAggregateErrors(err);
+              result = {
+                plan: decisions,
+                stats: {
+                  items: decisions.length,
+                  to_apply: decisions.filter((d) => d.action === "apply").length,
+                  skipped: decisions.filter((d) => d.action === "skip").length,
+                  noop: decisions.filter((d) => d.action === "noop").length,
+                },
+                errors,
+              };
+            }
           }
         }
       }
@@ -613,12 +914,46 @@ export function registerApply(program: Command): void {
             { title: "Applies", lines: appliesLines },
           ]);
           // Append a summary to the closing corner, consistent with plan preview
-          const summary = buildSummaryLine(
-            computeSummaryFromDecisions(decisionsAll),
-          );
+          let summary = buildSummaryLine(computeSummaryFromDecisions(decisionsAll));
+          try {
+            const st2 = await loadState();
+            const removed = computeRemovedSinceLastApply(
+              mgr,
+              decisionsAll,
+              st2.lastApply,
+              opts.config,
+            );
+            const base = computeSummaryFromDecisions(decisionsAll);
+            summary = buildSummaryLine({ ...base, bang: removed.length });
+          } catch {
+            // ignore
+          }
           const withSummary = appendSummaryToPanel(panel, summary, "corner");
           logger.log(withSummary);
         }
+      }
+
+      // After apply (and user confirmation), execute removals as proper tasks with progress UI
+      try {
+        if (!userConfirmed) {
+          // user aborted; do not perform removals
+          return;
+        }
+        const stNow = await loadState();
+        const removed = computeRemovedSinceLastApply(
+          mgr,
+          result.plan,
+          stNow.lastApply,
+          opts.config,
+        );
+        if (removed.length > 0) {
+          const tasks = buildRemovalTasks(mgr, removed);
+          if (tasks.length > 0) {
+            await runRemovalTasksWithUI(tasks);
+          }
+        }
+      } catch {
+        // ignore rendering errors
       }
 
       // Errors (if any)
@@ -643,12 +978,18 @@ export function registerApply(program: Command): void {
                 action: d.action,
                 summary: d.details?.summary,
               }))
-        ).filter((d) => d.action === "apply");
+        ).filter((d) => d.action === "apply" || d.action === "noop");
+        // Build id -> profile name map for current config
+        const idToProfile = new Map<string, string>();
+        for (const p of mgr.profiles) {
+          for (const it of p.items) idToProfile.set(it.id, p.name);
+        }
         const applied = chosenApplied.map((d) => {
           const it = mgr.deps.nodes.get(d.item_id);
           const label = it ? it.render() : String(d.item_id);
           const kind = it ? it.kind : "item";
-          return { id: d.item_id, kind, label, summary: d.summary };
+          const profile = idToProfile.get(d.item_id);
+          return { id: d.item_id, kind, label, summary: d.summary, profile };
         });
         const state = await loadState();
         state.lastApply = {

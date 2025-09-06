@@ -253,6 +253,39 @@ export class Manager {
   > {
     await this.events.emit("manager:plan_start");
     const items = this.topo_items();
+    // Probe compatible items up-front so we can accurately decide noop/apply
+    for (const it of items) {
+      const name = (it as { name?: string }).name;
+      const matches = (
+        it as {
+          matches?: import("./host/matching.ts").HostMatchExpr;
+        }
+      ).matches;
+      const compatible = matches ? this.host.evaluateMatch(matches) : true;
+      if (!compatible) continue;
+      await this.events.emit("item:probe_start", {
+        item_id: it.id,
+        kind: it.kind,
+        name,
+      });
+      try {
+        const st = await it.probe(this.host);
+        await this.events.emit("item:probe_done", {
+          item_id: it.id,
+          kind: it.kind,
+          name,
+          status: st,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await this.events.emit("item:probe_error", {
+          item_id: it.id,
+          kind: it.kind,
+          name,
+          error: msg,
+        });
+      }
+    }
     // Track items that failed validation so we can skip their dependents.
     const invalid = new Set<string>();
     const decisions: Array<{
@@ -342,10 +375,45 @@ export class Manager {
   async apply(opts?: {
     skipUpdates?: boolean;
     concurrency?: number;
+    forceApply?: boolean;
   }): Promise<void> {
     const wantAutoUpdate = !opts?.skipUpdates;
+    const forceApply = !!opts?.forceApply;
     const maxConcurrency = Math.max(1, opts?.concurrency ?? 4);
     const errors: Array<{ id: string; error: string }> = [];
+    // Establish current state before planning application, so we can skip
+    // already-applied items and respect external state.
+    const allItems = this.topo_items();
+    for (const it of allItems) {
+      const name = (it as { name?: string }).name;
+      const matches = (
+        it as { matches?: import("./host/matching.ts").HostMatchExpr }
+      ).matches;
+      const compatible = matches ? this.host.evaluateMatch(matches) : true;
+      if (!compatible) continue;
+      await this.events.emit("item:probe_start", {
+        item_id: it.id,
+        kind: it.kind,
+        name,
+      });
+      try {
+        const st = await it.probe(this.host);
+        await this.events.emit("item:probe_done", {
+          item_id: it.id,
+          kind: it.kind,
+          name,
+          status: st,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await this.events.emit("item:probe_error", {
+          item_id: it.id,
+          kind: it.kind,
+          name,
+          error: msg,
+        });
+      }
+    }
     // Build dependency tracking: unmet deps count initialized to number of
     // dependencies that are not currently applied.
     const unmet = new Map<string, number>();
@@ -427,7 +495,7 @@ export class Manager {
         const pluginKey = (it as unknown as { plugin_key?: string }).plugin_key;
         // Validate preconditions before applying (do not retry on validation errors)
         await it.validate(this.host);
-        if (!wasAppliedBefore) {
+        if (forceApply || !wasAppliedBefore) {
           // Try applying with retries up to the item's limit
           let applied = false;
           while (!applied) {

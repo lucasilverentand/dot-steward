@@ -103,6 +103,25 @@ export class FileContent extends Item {
     }
   }
 
+  async cleanup(ctx: HostContext): Promise<void> {
+    // Only remove if the file content matches what we manage to avoid deleting
+    // user-modified files.
+    const abs = resolveTargetPath(this.filePath, ctx);
+    try {
+      const desired = await this.renderContent();
+      const cur = await fs.readFile(abs, "utf8");
+      if (normalizeEOL(cur) !== normalizeEOL(desired)) return; // do not remove
+    } catch {
+      // if not found or failed to read, consider already gone
+      return;
+    }
+    try {
+      await fs.rm(abs, { force: true });
+    } catch {
+      // ignore
+    }
+  }
+
   private async renderContent(): Promise<string> {
     const vars = this.opts?.vars ?? {};
     switch (this.format) {
@@ -208,6 +227,27 @@ export class CopyFile extends Item {
       } catch {
         // ignore on platforms that don't support chmod
       }
+    }
+  }
+
+  async cleanup(ctx: HostContext): Promise<void> {
+    // Remove only when dest content still matches src to avoid deleting
+    // user-modified files.
+    const srcAbs = resolveSourcePath(this.srcPath);
+    const destAbs = resolveTargetPath(this.destPath, ctx);
+    try {
+      const [src, dest] = await Promise.all([
+        fs.readFile(srcAbs),
+        fs.readFile(destAbs),
+      ]);
+      if (!src.equals(dest)) return; // do not remove if diverged
+    } catch {
+      return; // nothing to do
+    }
+    try {
+      await fs.rm(destAbs, { force: true });
+    } catch {
+      // ignore
     }
   }
 }

@@ -7,6 +7,7 @@ import { buildPlanSections } from "../utils/planSections.ts";
 import { renderTreeSubsections } from "../utils/planTree.ts";
 import resolveConfigToFileUrl from "../utils/config.ts";
 import { appendSummaryToPanel, buildLegendLine, buildSummaryLine, computeSummaryFromDecisions } from "../utils/summary.ts";
+import { computeRemovedSinceLastApply, buildRemovalLinesByProfile } from "../utils/removals.ts";
 import { collectAggregateErrors } from "../utils/errors.ts";
 import pc from "picocolors";
 import { buildHostPanelLines } from "../utils/host.ts";
@@ -77,18 +78,59 @@ export function registerPlan(program: Command): void {
         // ignore errors on saving state
       }
 
+      // Compute removals based on lastApply vs current plan
+      let removedCount = 0;
+      try {
+        const st = await loadState();
+        const removed = computeRemovedSinceLastApply(mgr, decisions, st.lastApply, opts.config);
+        removedCount = removed.length;
+        // Inline injection: append removal lines to matching profile sections
+        if (removed.length > 0) {
+          const byProf = buildRemovalLinesByProfile(removed);
+          // Update planSections after building
+        }
+      } catch {
+        removedCount = 0;
+      }
+
       // Render grouped preview as part of the original gutter
       const planSections = buildPlanSections(mgr, decisions);
+      // Append removal lines inline under matching profile sections
+      try {
+        const st = await loadState();
+        const removed = computeRemovedSinceLastApply(mgr, decisions, st.lastApply, opts.config);
+        if (removed.length > 0) {
+          const byProf = buildRemovalLinesByProfile(removed);
+          for (const section of planSections) {
+            // Section titles are: "Plugins" or `Profile: <name>  ...`
+            if (!section.title.startsWith("Profile:")) continue;
+            const nameMatch = section.title.match(/^Profile:\s+([^\s].*?)(\s{2,}|$)/);
+            const profName = nameMatch?.[1];
+            if (!profName) continue;
+            const extra = byProf.get(profName);
+            if (extra && extra.length > 0) section.lines.push(...extra);
+          }
+          // Leftovers (previous profiles) -> append a dedicated trailing section once
+          const leftovers = byProf.get("(previous)") || [];
+          if (leftovers.length > 0) {
+            planSections.push({ title: "Profile: (previous)", lines: leftovers });
+          }
+        }
+      } catch {
+        // ignore
+      }
       const planLines = [
         buildLegendLine(),
         "",
         ...renderTreeSubsections(planSections),
       ];
-      const panel = renderPanelSections([
+      const sections = [
         { title: "Host Details", lines: hostPanelLines },
         { title: "Plan", lines: planLines },
-      ]);
-      const summary = buildSummaryLine(computeSummaryFromDecisions(decisions));
+      ];
+      const panel = renderPanelSections(sections);
+      const baseSummary = computeSummaryFromDecisions(decisions);
+      const summary = buildSummaryLine({ ...baseSummary, bang: removedCount });
       const withSummary = appendSummaryToPanel(panel, summary, "corner");
       logger.log(withSummary);
 

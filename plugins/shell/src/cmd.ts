@@ -47,9 +47,11 @@ export class ShellCommand extends Item {
   }
 
   async probe(_ctx: HostContext): Promise<ItemStatus> {
-    // For now, we don't have a check; respect `always` toggle
+    // Treat shell commands as one-shot by default:
+    // - when `always` is true, mark pending so it will run
+    // - otherwise, consider it already applied so it's skipped
     if (this.options?.always) this.set_status("pending");
-    else this.set_status("pending");
+    else this.set_status("applied");
     return this.state.status;
   }
 
@@ -59,7 +61,7 @@ export class ShellCommand extends Item {
   }
 
   async plan(_ctx: HostContext): Promise<ItemPlan | null> {
-    const note = this.options?.always ? "always" : "run";
+    const note = this.options?.always ? "always" : "noop";
     return { summary: `shell ${this.name} (${note})` };
   }
 

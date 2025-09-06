@@ -80,6 +80,17 @@ export class BrewFormula extends Item {
     }
   }
 
+  async cleanup(_ctx: HostContext): Promise<void> {
+    // Attempt uninstall; ignore when not installed
+    if (this.pkgKind === "cask") {
+      await brewExec(["uninstall", "--cask", ...this.flags, this.name], {
+        useFastEnv: false,
+      });
+    } else {
+      await brewExec(["uninstall", this.name], { useFastEnv: false });
+    }
+  }
+
   async validate(_ctx: HostContext): Promise<void> {
     // For casks, tapping is no longer required; if a tap is provided, ensure it matches a qualified name
     if (this.pkgKind === "cask") {
