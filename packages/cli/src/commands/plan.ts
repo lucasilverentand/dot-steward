@@ -1,16 +1,24 @@
 import { Manager } from "@dot-steward/core";
 import type { Command } from "commander";
+import pc from "picocolors";
 import { decisionsToSaved, hostKey, loadState, saveState } from "../state.ts";
+import resolveConfigToFileUrl from "../utils/config.ts";
+import { collectAggregateErrors } from "../utils/errors.ts";
+import { buildHostPanelLines } from "../utils/host.ts";
 import logger from "../utils/logger.ts";
-import { renderPanelSections } from "../utils/ui.ts";
 import { buildPlanSections } from "../utils/planSections.ts";
 import { renderTreeSubsections } from "../utils/planTree.ts";
-import resolveConfigToFileUrl from "../utils/config.ts";
-import { appendSummaryToPanel, buildLegendLine, buildSummaryLine, computeSummaryFromDecisions } from "../utils/summary.ts";
-import { computeRemovedSinceLastApply, buildRemovalLinesByProfile } from "../utils/removals.ts";
-import { collectAggregateErrors } from "../utils/errors.ts";
-import pc from "picocolors";
-import { buildHostPanelLines } from "../utils/host.ts";
+import {
+  buildRemovalLinesByProfile,
+  computeRemovedSinceLastApply,
+} from "../utils/removals.ts";
+import {
+  appendSummaryToPanel,
+  buildLegendLine,
+  buildSummaryLine,
+  computeSummaryFromDecisions,
+} from "../utils/summary.ts";
+import { renderPanelSections } from "../utils/ui.ts";
 // Removed table renderer for host details; we'll print a simple vertical list
 
 export function registerPlan(program: Command): void {
@@ -82,7 +90,12 @@ export function registerPlan(program: Command): void {
       let removedCount = 0;
       try {
         const st = await loadState();
-        const removed = computeRemovedSinceLastApply(mgr, decisions, st.lastApply, opts.config);
+        const removed = computeRemovedSinceLastApply(
+          mgr,
+          decisions,
+          st.lastApply,
+          opts.config,
+        );
         removedCount = removed.length;
         // Inline injection: append removal lines to matching profile sections
         if (removed.length > 0) {
@@ -98,13 +111,20 @@ export function registerPlan(program: Command): void {
       // Append removal lines inline under matching profile sections
       try {
         const st = await loadState();
-        const removed = computeRemovedSinceLastApply(mgr, decisions, st.lastApply, opts.config);
+        const removed = computeRemovedSinceLastApply(
+          mgr,
+          decisions,
+          st.lastApply,
+          opts.config,
+        );
         if (removed.length > 0) {
           const byProf = buildRemovalLinesByProfile(removed);
           for (const section of planSections) {
             // Section titles are: "Plugins" or `Profile: <name>  ...`
             if (!section.title.startsWith("Profile:")) continue;
-            const nameMatch = section.title.match(/^Profile:\s+([^\s].*?)(\s{2,}|$)/);
+            const nameMatch = section.title.match(
+              /^Profile:\s+([^\s].*?)(\s{2,}|$)/,
+            );
             const profName = nameMatch?.[1];
             if (!profName) continue;
             const extra = byProf.get(profName);
@@ -113,7 +133,10 @@ export function registerPlan(program: Command): void {
           // Leftovers (previous profiles) -> append a dedicated trailing section once
           const leftovers = byProf.get("(previous)") || [];
           if (leftovers.length > 0) {
-            planSections.push({ title: "Profile: (previous)", lines: leftovers });
+            planSections.push({
+              title: "Profile: (previous)",
+              lines: leftovers,
+            });
           }
         }
       } catch {

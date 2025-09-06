@@ -11,7 +11,10 @@ export const DefaultWriteSchema = z
     type: z.enum(["-bool", "-int", "-float", "-string"]),
     value: z.union([z.boolean(), z.number(), z.string()]),
     opts: z
-      .object({ global: z.boolean().optional(), currentHost: z.boolean().optional() })
+      .object({
+        global: z.boolean().optional(),
+        currentHost: z.boolean().optional(),
+      })
       .optional(),
     restart: z.string().optional(),
   })
@@ -95,4 +98,3 @@ export const MacSettingsSchema = z
   .strict();
 
 export type MacSettings = z.infer<typeof MacSettingsSchema>;
-

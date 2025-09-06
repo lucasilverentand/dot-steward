@@ -1,8 +1,8 @@
 import { Item, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
-import { AppStorePlugin } from "./plugin.ts";
 import { masExec } from "./common.ts";
+import { AppStorePlugin } from "./plugin.ts";
 
 export class AppStoreApp extends Item {
   readonly appId: string;
@@ -64,7 +64,7 @@ export class AppStoreApp extends Item {
 
     let res = await tryInstall();
     if (!res.ok) {
-      const out = (res.stdout + "\n" + res.stderr).toLowerCase();
+      const out = `${res.stdout}\n${res.stderr}`.toLowerCase();
       const notSigned =
         out.includes("not signed in") ||
         out.includes("please sign in") ||
@@ -81,7 +81,8 @@ export class AppStoreApp extends Item {
         const p = await masExec(["purchase", this.appId]);
         if (!p.ok) {
           throw new Error(
-            p.stderr || `Unable to purchase app ${this.appId}. Purchase in App Store then retry.`,
+            p.stderr ||
+              `Unable to purchase app ${this.appId}. Purchase in App Store then retry.`,
           );
         }
         res = await tryInstall();
@@ -107,7 +108,8 @@ export class AppStoreApp extends Item {
   async plan(ctx: HostContext): Promise<ItemPlan | null> {
     const label = this.name ? `${this.name} (${this.appId})` : this.appId;
     const matches = this.matches ? ctx.evaluateMatch(this.matches) : true;
-    if (!matches) return { summary: `[skip] app-store ${label} (incompatible host)` };
+    if (!matches)
+      return { summary: `[skip] app-store ${label} (incompatible host)` };
 
     // Fast path: if known applied, just check upgrades
     try {
@@ -133,7 +135,7 @@ export class AppStoreApp extends Item {
     // Run targeted upgrade for this app id
     const res = await masExec(["upgrade", this.appId]);
     if (!res.ok) {
-      const out = (res.stdout + "\n" + res.stderr).toLowerCase();
+      const out = `${res.stdout}\n${res.stderr}`.toLowerCase();
       const notSigned =
         out.includes("not signed in") ||
         out.includes("please sign in") ||
@@ -164,7 +166,7 @@ export class AppStoreApp extends Item {
     }
     const res = await masExec(["uninstall", this.appId]);
     if (!res.ok) {
-      const out = (res.stdout + "\n" + res.stderr).toLowerCase();
+      const out = `${res.stdout}\n${res.stderr}`.toLowerCase();
       const notSigned =
         out.includes("not signed in") ||
         out.includes("please sign in") ||

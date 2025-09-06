@@ -104,7 +104,8 @@ export class HostContext implements HostContextShape {
   private async detectHostname(): Promise<string | null> {
     try {
       const hn = os.hostname();
-      if (typeof hn === "string" && hn.length > 0) return this.cleanHostname(hn);
+      if (typeof hn === "string" && hn.length > 0)
+        return this.cleanHostname(hn);
       return null;
     } catch {
       return null;

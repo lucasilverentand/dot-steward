@@ -1,18 +1,29 @@
 import pc from "picocolors";
 import type { PlanDecision } from "./planFormat.ts";
 
-export type SummaryCounts = { plus: number; minus: number; tilde: number; bang?: number };
+export type SummaryCounts = {
+  plus: number;
+  minus: number;
+  tilde: number;
+  bang?: number;
+};
 
 export function buildLegendLine(): string {
   return `${pc.green("+ create")}  ${pc.red("! destroy")}  ${pc.yellow("~ modify")}  ${pc.dim("- no op")}`;
 }
 
-export function computeSummaryFromDecisions(decisions: PlanDecision[]): SummaryCounts {
+export function computeSummaryFromDecisions(
+  decisions: PlanDecision[],
+): SummaryCounts {
   const isUpdate = (d: PlanDecision): boolean =>
     typeof d.details?.summary === "string" &&
     /^\s*\[(update|modify)\]/i.test(d.details.summary);
-  const plus = decisions.filter((d) => d.action === "apply" && !isUpdate(d)).length;
-  const tilde = decisions.filter((d) => d.action === "apply" && isUpdate(d)).length;
+  const plus = decisions.filter(
+    (d) => d.action === "apply" && !isUpdate(d),
+  ).length;
+  const tilde = decisions.filter(
+    (d) => d.action === "apply" && isUpdate(d),
+  ).length;
   const minus = decisions.filter((d) => d.action === "noop").length;
   return { plus, minus, tilde, bang: 0 };
 }

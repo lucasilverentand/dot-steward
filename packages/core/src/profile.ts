@@ -77,11 +77,13 @@ export class Profile extends Item {
 }
 
 // Normalize possibly nested item arrays
-function normalizeItems(items: Array<Item | Item[] | null | undefined | false>): Item[] {
+function normalizeItems(
+  items: Array<Item | Item[] | null | undefined | false>,
+): Item[] {
   const out: Item[] = [];
   for (const it of items) {
     if (!it) continue;
-    if (Array.isArray(it)) out.push(...it.filter(Boolean) as Item[]);
+    if (Array.isArray(it)) out.push(...(it.filter(Boolean) as Item[]));
     else out.push(it);
   }
   return out;
@@ -96,7 +98,9 @@ function resolveInputValues(
   // Let Zod handle defaults and type coercion as defined by the schema.
   const parsed = schema.parse(base);
   // Ensure we always return a plain object
-  return (parsed && typeof parsed === "object") ? (parsed as Record<string, unknown>) : {};
+  return parsed && typeof parsed === "object"
+    ? (parsed as Record<string, unknown>)
+    : {};
 }
 
 export function profile<S extends ProfileInputsSchema = z.ZodTypeAny>({
@@ -111,7 +115,9 @@ export function profile<S extends ProfileInputsSchema = z.ZodTypeAny>({
   // Items can be a static list or a builder using inputs
   items?:
     | Item[]
-    | ((ctx: { input: z.infer<S>; when: typeof when }) => Array<Item | Item[] | null | undefined | false>);
+    | ((ctx: { input: z.infer<S>; when: typeof when }) => Array<
+        Item | Item[] | null | undefined | false
+      >);
   inputs?: S;
   values?: Record<string, unknown>;
 }): Profile {

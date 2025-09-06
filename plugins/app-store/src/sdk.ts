@@ -1,5 +1,5 @@
-import { AppStoreApp } from "./app.ts";
 import { brew } from "@dot-steward/plugin-brew";
+import { AppStoreApp } from "./app.ts";
 
 export const appStore = {
   // Returns a tuple [brew.mas, app] so brew handles mas installation

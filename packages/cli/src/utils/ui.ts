@@ -15,7 +15,11 @@ export function renderPanelWithList(title: string, lines: string[]): string {
   out.push("│");
   for (const line of lines) {
     // If the line is a tree branch (├─/╰─/╭─), don't add an extra gutter
-    if (line.startsWith("├─") || line.startsWith("╰─") || line.startsWith("╭─")) {
+    if (
+      line.startsWith("├─") ||
+      line.startsWith("╰─") ||
+      line.startsWith("╭─")
+    ) {
       out.push(line);
     } else {
       out.push(`│  ${line}`);
@@ -43,7 +47,8 @@ export function renderPanelSections(
     out.push("│"); // line segment (no blank line)
     for (const ln of s.lines) {
       // If the line is a tree branch (├─/╰─/╭─), don't add an extra gutter
-      if (ln.startsWith("├─") || ln.startsWith("╰─") || ln.startsWith("╭─")) out.push(ln);
+      if (ln.startsWith("├─") || ln.startsWith("╰─") || ln.startsWith("╭─"))
+        out.push(ln);
       else out.push(`│  ${ln}`);
     }
     // Spacer between sections (keeps line continuity)

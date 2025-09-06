@@ -1,9 +1,9 @@
+import { execFile as _execFile, spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { execFile as _execFile, spawnSync } from "node:child_process";
-import pc from "picocolors";
 import type { Manager } from "@dot-steward/core";
+import pc from "picocolors";
 import type { LastApply } from "../state.ts";
 import type { RemovalCandidate } from "./removals.ts";
 
@@ -48,13 +48,16 @@ function buildTaskForBrew(kind: string, label: string): RemovalTask | null {
   if (!m) return null;
   const pkgKind = m[1] as "formula" | "cask";
   const name = m[2].trim();
-  const args = pkgKind === "cask" ? ["uninstall", "--cask", name] : ["uninstall", name];
+  const args =
+    pkgKind === "cask" ? ["uninstall", "--cask", name] : ["uninstall", name];
   return {
     id: `rem-brew:${pkgKind}:${name}`,
     kind,
     label,
     run: async () => {
-      const { ok, stderr } = await execOk("brew", args, { timeoutMs: 15 * 60_000 });
+      const { ok, stderr } = await execOk("brew", args, {
+        timeoutMs: 15 * 60_000,
+      });
       if (!ok) throw new Error(stderr || `brew uninstall failed for ${name}`);
     },
   };
@@ -66,7 +69,8 @@ function buildTaskForAppStore(
   mgr: Manager,
 ): RemovalTask | null {
   // Expect label like "[app-store] Name (123456789)" or "[app-store] 123456789"
-  const idMatch = label.match(/\((\d{4,})\)\s*$/) || label.match(/\b(\d{4,})\b/);
+  const idMatch =
+    label.match(/\((\d{4,})\)\s*$/) || label.match(/\b(\d{4,})\b/);
   const id = idMatch?.[1];
   if (!id) return null;
   return {
@@ -75,42 +79,47 @@ function buildTaskForAppStore(
     label,
     run: async () => {
       // Try normal uninstall first
-      let res = await execOk("mas", ["uninstall", id], { timeoutMs: 15 * 60_000 });
+      let res = await execOk("mas", ["uninstall", id], {
+        timeoutMs: 15 * 60_000,
+      });
       if (res.ok) return;
       // If it failed and we can sudo on macOS and not root, attempt with sudo
       const canElevate =
-        mgr.host.os === "darwin" && !mgr.host.user.is_root && !!mgr.host.user.can_sudo;
+        mgr.host.os === "darwin" &&
+        !mgr.host.user.is_root &&
+        !!mgr.host.user.can_sudo;
       if (canElevate) {
         // First try non-interactive sudo (timestamp may already be valid)
-        res = await execOk(
-          "sudo",
-          ["-n", "-E", "mas", "uninstall", id],
-          { timeoutMs: 15 * 60_000, env: process.env },
-        );
+        res = await execOk("sudo", ["-n", "-E", "mas", "uninstall", id], {
+          timeoutMs: 15 * 60_000,
+          env: process.env,
+        });
         if (!res.ok && process.stdin.isTTY && process.stdout.isTTY) {
           // Prompt once to refresh sudo timestamp, then retry elevated
           try {
             const r = spawnSync("sudo", ["-v"], { stdio: "inherit" });
             if (r.status === 0) {
-              res = await execOk(
-                "sudo",
-                ["-E", "mas", "uninstall", id],
-                { timeoutMs: 15 * 60_000, env: process.env },
-              );
+              res = await execOk("sudo", ["-E", "mas", "uninstall", id], {
+                timeoutMs: 15 * 60_000,
+                env: process.env,
+              });
             }
           } catch {
             // ignore and fall through to error
           }
         }
       }
-      if (!res.ok) throw new Error(res.stderr || `mas uninstall failed for ${id}`);
+      if (!res.ok)
+        throw new Error(res.stderr || `mas uninstall failed for ${id}`);
     },
   };
 }
 
 function buildTaskForFile(kind: string, label: string): RemovalTask | null {
   // label is rendered path for file items, e.g., "/abs" or "~/path"
-  const p = expandHome(label.startsWith("[") ? label.replace(/^\[[^\]]+\]\s*/, "") : label);
+  const p = expandHome(
+    label.startsWith("[") ? label.replace(/^\[[^\]]+\]\s*/, "") : label,
+  );
   // Avoid removing directories inadvertently; we expect files
   return {
     id: `rem-file:${p}`,
@@ -149,14 +158,15 @@ export function buildRemovalTasks(
     if (k === "file:content" || k === "file:copy") {
       const t = buildTaskForFile(k, r.label);
       if (t) tasks.push(t);
-      continue;
     }
     // Other kinds currently unsupported for automatic removal
   }
   return tasks;
 }
 
-export async function runRemovalTasksWithUI(tasks: RemovalTask[]): Promise<{ ok: number; err: number }> {
+export async function runRemovalTasksWithUI(
+  tasks: RemovalTask[],
+): Promise<{ ok: number; err: number }> {
   type Status = "pending" | "running" | "done" | "error" | "skip";
   type Row = { title: string; status: Status; note?: string };
   const rows: Row[] = tasks.map((t) => ({ title: t.label, status: "pending" }));
@@ -185,10 +195,13 @@ export async function runRemovalTasksWithUI(tasks: RemovalTask[]): Promise<{ ok:
   const draw = () => {
     const header = "◆  Removals";
     const lines: string[] = ["│", header, "│", "├─ Items"]; // single section
-    for (const r of rows) lines.push(`│  ${symbol(r)} ${r.title}${r.note ? ` ${pc.dim("(")}${r.note}${pc.dim(")")}` : ""}`);
+    for (const r of rows)
+      lines.push(
+        `│  ${symbol(r)} ${r.title}${r.note ? ` ${pc.dim("(")}${r.note}${pc.dim(")")}` : ""}`,
+      );
     lines.push("└");
     if (isTTY && printed > 0) process.stdout.write(`\x1b[${printed}A\x1b[J`);
-    process.stdout.write(lines.join("\n") + "\n");
+    process.stdout.write(`${lines.join("\n")}\n`);
     printed = lines.length;
   };
 

@@ -4,7 +4,6 @@ import type { ItemStatus } from "@dot-steward/core";
 import { masOk } from "./common.ts";
 
 export class AppStorePlugin extends Plugin {
-
   constructor() {
     // macOS only
     super("app-store", hostOS("darwin"));

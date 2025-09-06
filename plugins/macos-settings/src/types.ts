@@ -28,4 +28,3 @@ export type CatalogRule = {
 
 // Forward type reference helpers
 export type ZodInfer<T extends z.ZodTypeAny> = z.infer<T>;
-

@@ -1,7 +1,7 @@
 import { Manager } from "@dot-steward/core";
 import type { Command } from "commander";
-import resolveConfigToFileUrl from "../utils/config.ts";
 import pc from "picocolors";
+import resolveConfigToFileUrl from "../utils/config.ts";
 
 export function registerUpgrade(program: Command): void {
   program
@@ -69,7 +69,9 @@ export function registerUpgrade(program: Command): void {
       // If nothing was upgraded, show a concise corner message like apply
       if (upgradedCount === 0) {
         console.log("│");
-        console.log(`╰─  ${pc.dim("Nothing to upgrade. All items are up-to-date.")}`);
+        console.log(
+          `╰─  ${pc.dim("Nothing to upgrade. All items are up-to-date.")}`,
+        );
       }
     });
 }

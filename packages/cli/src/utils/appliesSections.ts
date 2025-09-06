@@ -1,4 +1,4 @@
-import type { Manager } from "@dot-steward/core";
+import { type Manager, Plugin } from "@dot-steward/core";
 import pc from "picocolors";
 import type { PlanDecision } from "./planFormat.ts";
 import type { PanelSection } from "./planSections.ts";
@@ -25,8 +25,8 @@ export function buildAppliesSections(
   const applied = decisions.filter((d) => d.action === "apply");
   if (applied.length === 0) return sections;
 
-  const pluginApplied = applied.filter((d) => (d.item as any).kind === "plugin");
-  const itemApplied = applied.filter((d) => (d.item as any).kind !== "plugin");
+  const pluginApplied = applied.filter((d) => d.item instanceof Plugin);
+  const itemApplied = applied.filter((d) => !(d.item instanceof Plugin));
 
   // Map item.id -> profile name for active profiles
   const idToProfile = new Map<string, string>();
@@ -53,4 +53,3 @@ export function buildAppliesSections(
 
   return sections;
 }
-

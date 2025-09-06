@@ -23,4 +23,3 @@ export class FilePlugin extends Plugin {
 export function filePlugin(): FilePlugin {
   return new FilePlugin();
 }
-

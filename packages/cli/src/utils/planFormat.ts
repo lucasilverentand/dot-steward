@@ -10,7 +10,8 @@ export function formatDecisionLine(dec: PlanDecision): string {
   let sym = "-";
   let color = DIM;
   const summary = dec.details?.summary || "";
-  const isUpdate = typeof summary === "string" && /^\s*\[(update|modify)\]/i.test(summary);
+  const isUpdate =
+    typeof summary === "string" && /^\s*\[(update|modify)\]/i.test(summary);
   if (dec.action === "apply") {
     if (isUpdate) {
       sym = "~";

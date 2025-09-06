@@ -2,9 +2,9 @@ import { Item, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
 import { ShellPlugin } from "../../shell/src/plugin.ts";
-import { MacSettingsSchema, type MacSettings } from "./schema.ts";
-import type { CatalogRule, Rule, WriteType } from "./types.ts";
 import { ALL_CATALOG } from "./catalog.ts";
+import { type MacSettings, MacSettingsSchema } from "./schema.ts";
+import type { CatalogRule, Rule, WriteType } from "./types.ts";
 
 // Item: applies macOS settings via `defaults write` + targeted restarts
 export class MacSettingsItem extends Item {
@@ -23,7 +23,10 @@ export class MacSettingsItem extends Item {
     let cur: unknown = obj;
     for (const p of path) {
       if (cur === null || cur === undefined) return undefined;
-      cur = (cur as any)[p];
+      if (typeof cur !== "object") return undefined;
+      const rec = cur as Record<string, unknown>;
+      if (!(p in rec)) return undefined;
+      cur = rec[p];
     }
     return cur;
   }
@@ -57,7 +60,7 @@ export class MacSettingsItem extends Item {
     if (this.cfg.keyboard) cats.push("keyboard");
     if (this.cfg.screenshot) cats.push("screenshot");
     if (this.cfg.global) cats.push("global");
-    if (this.cfg.defaults && this.cfg.defaults.length) cats.push("defaults");
+    if (this.cfg.defaults?.length) cats.push("defaults");
     if (this.cfg.all && Object.keys(this.cfg.all).length) cats.push("all");
     const label = cats.length > 0 ? cats.join(", ") : "none";
     let changes = 0;
@@ -75,7 +78,11 @@ export class MacSettingsItem extends Item {
   private async run(cmd: string, ctx: HostContext) {
     // Prefer ShellPlugin to leverage sudo prompting behavior if needed
     const res = this.plugin
-      ? await this.plugin.run(cmd, { shell: "sh", cwd: ctx.user.home ?? "." }, ctx)
+      ? await this.plugin.run(
+          cmd,
+          { shell: "sh", cwd: ctx.user.home ?? "." },
+          ctx,
+        )
       : await (await import("../../shell/src/exec.ts")).runShell(cmd, {
           shell: "sh",
           cwd: ctx.user.home ?? ".",
@@ -109,7 +116,11 @@ export class MacSettingsItem extends Item {
     const keyArg = JSON.stringify(key);
     const cmd = `defaults ${hostFlag}read ${domainArg} ${keyArg}`;
     const res = this.plugin
-      ? await this.plugin.run(cmd, { shell: "sh", cwd: ctx.user.home ?? "." }, ctx)
+      ? await this.plugin.run(
+          cmd,
+          { shell: "sh", cwd: ctx.user.home ?? "." },
+          ctx,
+        )
       : await (await import("../../shell/src/exec.ts")).runShell(cmd, {
           shell: "sh",
           cwd: ctx.user.home ?? ".",
@@ -127,14 +138,13 @@ export class MacSettingsItem extends Item {
         return v === "1" || v === "true" || v === "yes" || v === "y";
       }
       case "-int": {
-        const n = parseInt(s, 10);
+        const n = Number.parseInt(s, 10);
         return Number.isFinite(n) ? n : undefined;
       }
       case "-float": {
-        const n = parseFloat(s);
+        const n = Number.parseFloat(s);
         return Number.isFinite(n) ? n : undefined;
       }
-      case "-string":
       default:
         return s.replace(/^"|"$/g, "");
     }
@@ -156,7 +166,13 @@ export class MacSettingsItem extends Item {
 
   private async computeChanges(ctx: HostContext): Promise<number> {
     let changes = 0;
-    const consider = async (domain: string, key: string, type: WriteType, desired: unknown, opts?: { global?: boolean; currentHost?: boolean }) => {
+    const consider = async (
+      domain: string,
+      key: string,
+      type: WriteType,
+      desired: unknown,
+      opts?: { global?: boolean; currentHost?: boolean },
+    ) => {
       const currentRaw = await this.defaultsRead(ctx, domain, key, opts);
       const cur = this.parseByType(type, currentRaw);
       // For numbers, compare numerically; for strings/booleans, strict compare
@@ -166,8 +182,14 @@ export class MacSettingsItem extends Item {
         const c = typeof cur === "number" ? cur : Number(cur);
         if (!Number.isFinite(c) || Math.abs(c - d) > 1e-6) changes++;
       } else if (type === "-int") {
-        const d = typeof desired === "number" ? Math.trunc(desired) : Number.parseInt(String(desired), 10);
-        const c = typeof cur === "number" ? Math.trunc(cur) : Number.parseInt(String(cur ?? NaN), 10);
+        const d =
+          typeof desired === "number"
+            ? Math.trunc(desired)
+            : Number.parseInt(String(desired), 10);
+        const c =
+          typeof cur === "number"
+            ? Math.trunc(cur)
+            : Number.parseInt(String(cur ?? Number.NaN), 10);
         if (!Number.isFinite(c) || c !== d) changes++;
       } else {
         if (cur !== desired) changes++;
@@ -177,38 +199,182 @@ export class MacSettingsItem extends Item {
     // Specific rules driven by cfg.*
     const rules: Rule[] = [
       // mouse
-      { path: ["mouse", "speed"], domain: "NSGlobalDomain", key: "com.apple.mouse.scaling", type: "-float", opts: { global: true } },
-      { path: ["mouse", "natural_scrolling"], domain: "NSGlobalDomain", key: "com.apple.swipescrolldirection", type: "-bool", opts: { global: true } },
-      { path: ["mouse", "tap_to_click"], domain: "com.apple.AppleMultitouchTrackpad", key: "Clicking", type: "-bool" },
-      { path: ["mouse", "tap_to_click"], domain: "com.apple.driver.AppleBluetoothMultitouch.trackpad", key: "Clicking", type: "-bool" },
-      { path: ["mouse", "tap_to_click"], domain: "NSGlobalDomain", key: "com.apple.mouse.tapBehavior", type: "-int", opts: { global: true, currentHost: true }, map: (v) => (v ? "1" : "0") },
+      {
+        path: ["mouse", "speed"],
+        domain: "NSGlobalDomain",
+        key: "com.apple.mouse.scaling",
+        type: "-float",
+        opts: { global: true },
+      },
+      {
+        path: ["mouse", "natural_scrolling"],
+        domain: "NSGlobalDomain",
+        key: "com.apple.swipescrolldirection",
+        type: "-bool",
+        opts: { global: true },
+      },
+      {
+        path: ["mouse", "tap_to_click"],
+        domain: "com.apple.AppleMultitouchTrackpad",
+        key: "Clicking",
+        type: "-bool",
+      },
+      {
+        path: ["mouse", "tap_to_click"],
+        domain: "com.apple.driver.AppleBluetoothMultitouch.trackpad",
+        key: "Clicking",
+        type: "-bool",
+      },
+      {
+        path: ["mouse", "tap_to_click"],
+        domain: "NSGlobalDomain",
+        key: "com.apple.mouse.tapBehavior",
+        type: "-int",
+        opts: { global: true, currentHost: true },
+        map: (v) => (v ? "1" : "0"),
+      },
       // dock
-      { path: ["dock", "autohide"], domain: "com.apple.dock", key: "autohide", type: "-bool" },
-      { path: ["dock", "tilesize"], domain: "com.apple.dock", key: "tilesize", type: "-int" },
-      { path: ["dock", "magnification"], domain: "com.apple.dock", key: "magnification", type: "-bool" },
-      { path: ["dock", "largesize"], domain: "com.apple.dock", key: "largesize", type: "-int" },
-      { path: ["dock", "orientation"], domain: "com.apple.dock", key: "orientation", type: "-string" },
-      { path: ["dock", "minimize_to_application"], domain: "com.apple.dock", key: "minimize-to-application", type: "-bool" },
-      { path: ["dock", "mineffect"], domain: "com.apple.dock", key: "mineffect", type: "-string" },
-      { path: ["dock", "show_recents"], domain: "com.apple.dock", key: "show-recents", type: "-bool" },
-      { path: ["dock", "autohide_delay"], domain: "com.apple.dock", key: "autohide-delay", type: "-float" },
-      { path: ["dock", "autohide_time"], domain: "com.apple.dock", key: "autohide-time-modifier", type: "-float" },
+      {
+        path: ["dock", "autohide"],
+        domain: "com.apple.dock",
+        key: "autohide",
+        type: "-bool",
+      },
+      {
+        path: ["dock", "tilesize"],
+        domain: "com.apple.dock",
+        key: "tilesize",
+        type: "-int",
+      },
+      {
+        path: ["dock", "magnification"],
+        domain: "com.apple.dock",
+        key: "magnification",
+        type: "-bool",
+      },
+      {
+        path: ["dock", "largesize"],
+        domain: "com.apple.dock",
+        key: "largesize",
+        type: "-int",
+      },
+      {
+        path: ["dock", "orientation"],
+        domain: "com.apple.dock",
+        key: "orientation",
+        type: "-string",
+      },
+      {
+        path: ["dock", "minimize_to_application"],
+        domain: "com.apple.dock",
+        key: "minimize-to-application",
+        type: "-bool",
+      },
+      {
+        path: ["dock", "mineffect"],
+        domain: "com.apple.dock",
+        key: "mineffect",
+        type: "-string",
+      },
+      {
+        path: ["dock", "show_recents"],
+        domain: "com.apple.dock",
+        key: "show-recents",
+        type: "-bool",
+      },
+      {
+        path: ["dock", "autohide_delay"],
+        domain: "com.apple.dock",
+        key: "autohide-delay",
+        type: "-float",
+      },
+      {
+        path: ["dock", "autohide_time"],
+        domain: "com.apple.dock",
+        key: "autohide-time-modifier",
+        type: "-float",
+      },
       // finder
-      { path: ["finder", "show_hidden"], domain: "com.apple.finder", key: "AppleShowAllFiles", type: "-bool" },
-      { path: ["finder", "show_path_bar"], domain: "com.apple.finder", key: "ShowPathbar", type: "-bool" },
-      { path: ["finder", "show_status_bar"], domain: "com.apple.finder", key: "ShowStatusBar", type: "-bool" },
-      { path: ["finder", "extension_change_warning"], domain: "com.apple.finder", key: "FXEnableExtensionChangeWarning", type: "-bool" },
+      {
+        path: ["finder", "show_hidden"],
+        domain: "com.apple.finder",
+        key: "AppleShowAllFiles",
+        type: "-bool",
+      },
+      {
+        path: ["finder", "show_path_bar"],
+        domain: "com.apple.finder",
+        key: "ShowPathbar",
+        type: "-bool",
+      },
+      {
+        path: ["finder", "show_status_bar"],
+        domain: "com.apple.finder",
+        key: "ShowStatusBar",
+        type: "-bool",
+      },
+      {
+        path: ["finder", "extension_change_warning"],
+        domain: "com.apple.finder",
+        key: "FXEnableExtensionChangeWarning",
+        type: "-bool",
+      },
       // keyboard
-      { path: ["keyboard", "key_repeat"], domain: "NSGlobalDomain", key: "KeyRepeat", type: "-int", opts: { global: true } },
-      { path: ["keyboard", "initial_key_repeat"], domain: "NSGlobalDomain", key: "InitialKeyRepeat", type: "-int", opts: { global: true } },
-      { path: ["keyboard", "press_and_hold"], domain: "NSGlobalDomain", key: "ApplePressAndHoldEnabled", type: "-bool", opts: { global: true } },
+      {
+        path: ["keyboard", "key_repeat"],
+        domain: "NSGlobalDomain",
+        key: "KeyRepeat",
+        type: "-int",
+        opts: { global: true },
+      },
+      {
+        path: ["keyboard", "initial_key_repeat"],
+        domain: "NSGlobalDomain",
+        key: "InitialKeyRepeat",
+        type: "-int",
+        opts: { global: true },
+      },
+      {
+        path: ["keyboard", "press_and_hold"],
+        domain: "NSGlobalDomain",
+        key: "ApplePressAndHoldEnabled",
+        type: "-bool",
+        opts: { global: true },
+      },
       // screenshot
-      { path: ["screenshot", "location"], domain: "com.apple.screencapture", key: "location", type: "-string" },
-      { path: ["screenshot", "type"], domain: "com.apple.screencapture", key: "type", type: "-string" },
-      { path: ["screenshot", "disable_shadow"], domain: "com.apple.screencapture", key: "disable-shadow", type: "-bool" },
+      {
+        path: ["screenshot", "location"],
+        domain: "com.apple.screencapture",
+        key: "location",
+        type: "-string",
+      },
+      {
+        path: ["screenshot", "type"],
+        domain: "com.apple.screencapture",
+        key: "type",
+        type: "-string",
+      },
+      {
+        path: ["screenshot", "disable_shadow"],
+        domain: "com.apple.screencapture",
+        key: "disable-shadow",
+        type: "-bool",
+      },
       // global
-      { path: ["global", "auto_hide_menu_bar"], domain: "NSGlobalDomain", key: "_HIHideMenuBar", type: "-bool", opts: { global: true } },
-      { path: ["global", "save_to_icloud_by_default"], domain: "NSGlobalDomain", key: "NSDocumentSaveNewDocumentsToCloud", type: "-bool", opts: { global: true } },
+      {
+        path: ["global", "auto_hide_menu_bar"],
+        domain: "NSGlobalDomain",
+        key: "_HIHideMenuBar",
+        type: "-bool",
+        opts: { global: true },
+      },
+      {
+        path: ["global", "save_to_icloud_by_default"],
+        domain: "NSGlobalDomain",
+        key: "NSDocumentSaveNewDocumentsToCloud",
+        type: "-bool",
+        opts: { global: true },
+      },
     ];
 
     for (const r of rules) {
@@ -231,7 +397,6 @@ export class MacSettingsItem extends Item {
           case "-float":
             desired = Number(d.value);
             break;
-          case "-string":
           default:
             desired = String(d.value);
         }
@@ -241,10 +406,14 @@ export class MacSettingsItem extends Item {
 
     if (this.cfg.all) {
       for (const [category, kv] of Object.entries(this.cfg.all)) {
-        const cat = (ALL_CATALOG as any)[category];
+        const cat = ALL_CATALOG[category as keyof typeof ALL_CATALOG];
         if (!cat) continue;
-        for (const [key, raw] of Object.entries(kv as Record<string, unknown>)) {
-          let rule = (cat as any)[key] as CatalogRule | CatalogRule[] | undefined;
+        for (const [key, raw] of Object.entries(
+          kv as Record<string, unknown>,
+        )) {
+          const rule = (
+            cat as Record<string, CatalogRule | CatalogRule[] | undefined>
+          )[key];
           if (!rule) continue;
           const rules = Array.isArray(rule) ? rule : [rule];
           for (const rr of rules) {
@@ -252,9 +421,12 @@ export class MacSettingsItem extends Item {
             if (typeof rr.map === "function") {
               // map returns string for write; coerce by type below
               const mapped = rr.map(raw);
-              if (rr.type === "-bool") desired = mapped === "true" || mapped === "1";
-              else if (rr.type === "-int") desired = Number.parseInt(mapped, 10);
-              else if (rr.type === "-float") desired = Number.parseFloat(mapped);
+              if (rr.type === "-bool")
+                desired = mapped === "true" || mapped === "1";
+              else if (rr.type === "-int")
+                desired = Number.parseInt(mapped, 10);
+              else if (rr.type === "-float")
+                desired = Number.parseFloat(mapped);
               else desired = String(raw);
             } else {
               if (rr.type === "-bool") desired = !!raw;
@@ -512,7 +684,14 @@ export class MacSettingsItem extends Item {
             valueStr = JSON.stringify(String(d.value));
             break;
         }
-        await this.defaultsWrite(ctx, d.domain, d.key, d.type, valueStr, d.opts);
+        await this.defaultsWrite(
+          ctx,
+          d.domain,
+          d.key,
+          d.type,
+          valueStr,
+          d.opts,
+        );
         if (d.restart) restart.add(d.restart);
       }
     }
@@ -520,22 +699,36 @@ export class MacSettingsItem extends Item {
     // Apply catalog-driven settings under cfg.all
     if (this.cfg.all) {
       for (const [category, kv] of Object.entries(this.cfg.all)) {
-        const cat = (ALL_CATALOG as any)[category];
+        const cat = ALL_CATALOG[category as keyof typeof ALL_CATALOG];
         if (!cat) throw new Error(`Unknown ALL.md category: ${category}`);
-        for (const [key, raw] of Object.entries(kv as Record<string, unknown>)) {
-          let rule = (cat as any)[key] as CatalogRule | CatalogRule[] | undefined;
+        for (const [key, raw] of Object.entries(
+          kv as Record<string, unknown>,
+        )) {
+          const rule = (
+            cat as Record<string, CatalogRule | CatalogRule[] | undefined>
+          )[key];
           if (!rule) throw new Error(`Unknown key in ${category}: ${key}`);
           const rules = Array.isArray(rule) ? rule : [rule];
           for (const r of rules) {
             // Map value to proper string by type
             let valueStr: string;
             if (typeof r.map === "function") valueStr = r.map(raw);
-            else if (r.type === "-bool") valueStr = (raw ? "true" : "false") as string;
-            else if (r.type === "-string") valueStr = JSON.stringify(String(raw));
-            else if (r.type === "-int") valueStr = String(Math.trunc(Number(raw)));
+            else if (r.type === "-bool")
+              valueStr = (raw ? "true" : "false") as string;
+            else if (r.type === "-string")
+              valueStr = JSON.stringify(String(raw));
+            else if (r.type === "-int")
+              valueStr = String(Math.trunc(Number(raw)));
             else valueStr = String(Number(raw)); // -float
             for (const domain of r.domains) {
-              await this.defaultsWrite(ctx, domain, r.key, r.type, valueStr, r.opts);
+              await this.defaultsWrite(
+                ctx,
+                domain,
+                r.key,
+                r.type,
+                valueStr,
+                r.opts,
+              );
             }
             if (r.restart) restart.add(r.restart);
           }
@@ -548,6 +741,6 @@ export class MacSettingsItem extends Item {
   }
 
   render(): string {
-    return `[macos] settings`;
+    return "[macos] settings";
   }
 }

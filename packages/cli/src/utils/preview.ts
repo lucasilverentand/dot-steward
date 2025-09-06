@@ -1,14 +1,22 @@
-import type { Manager } from "@dot-steward/core";
+import type { ItemPlan, Manager } from "@dot-steward/core";
+import type { SavedDecision } from "../state.ts";
 import logger from "./logger.ts";
-import { type PlanDecision } from "./planFormat.ts";
-import { renderPanelSections } from "./ui.ts";
+import type { PlanDecision } from "./planFormat.ts";
 import { buildPlanSections } from "./planSections.ts";
 import { renderTreeSubsections } from "./planTree.ts";
-import { appendSummaryToPanel, buildLegendLine, buildSummaryLine, computeSummaryFromDecisions } from "./summary.ts";
-import type { SavedDecision } from "../state.ts";
+import {
+  appendSummaryToPanel,
+  buildLegendLine,
+  buildSummaryLine,
+  computeSummaryFromDecisions,
+} from "./summary.ts";
+import { renderPanelSections } from "./ui.ts";
 
 // Render the plan preview exactly like the `plan` command.
-export function renderPlanPreview(mgr: Manager, decisions: PlanDecision[]): void {
+export function renderPlanPreview(
+  mgr: Manager,
+  decisions: PlanDecision[],
+): void {
   const sections = buildPlanSections(mgr, decisions);
   const planLines = [buildLegendLine(), "", ...renderTreeSubsections(sections)];
   const summary = buildSummaryLine(computeSummaryFromDecisions(decisions));
@@ -62,7 +70,9 @@ export async function reconstructSavedDecisions(
       item: match.item,
       action: sd.action,
       reason: sd.reason,
-      details: sd.summary ? ({ summary: sd.summary } as any) : match.details,
+      details: sd.summary
+        ? ({ summary: sd.summary } as ItemPlan)
+        : match.details,
     } as unknown as PlanDecision);
   }
   if (out.length === 0 && saved.length > 0) {

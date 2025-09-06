@@ -1,8 +1,8 @@
 // Simple CLI table renderer with unicode borders
 // Usage: console.log(renderTable(["Col1", "Col2"], [["a", "b"], [1, true]]));
 import pc from "picocolors";
-import wrapAnsi from "wrap-ansi";
 import stringWidth from "string-width";
+import wrapAnsi from "wrap-ansi";
 
 function toCell(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -44,7 +44,10 @@ export function renderTable(
   const cols = Math.max(h.length, ...data.map((r) => r.length));
   let widths = Array.from({ length: cols }, (_, i) => {
     const headerLen = h[i] ? stringWidth(h[i]) : 0;
-    const colLen = Math.max(0, ...data.map((r) => (r[i] ? stringWidth(r[i]) : 0)));
+    const colLen = Math.max(
+      0,
+      ...data.map((r) => (r[i] ? stringWidth(r[i]) : 0)),
+    );
     return Math.max(headerLen, colLen);
   });
 
@@ -159,7 +162,9 @@ export function renderKeyValueBox(
 
   function wrapText(text: string, width: number): string[] {
     if (width <= 0) return [""];
-    return wrapAnsi(String(text), width, { hard: true, trim: false }).split("\n");
+    return wrapAnsi(String(text), width, { hard: true, trim: false }).split(
+      "\n",
+    );
   }
 
   const lines: string[] = [];

@@ -1,8 +1,13 @@
 // Normalize AggregateError-like structures into a simple array
 // of { id, error } where message format is "<uuid>: <detail>" when available.
-export function collectAggregateErrors(err: unknown): Array<{ id: string; error: string }> {
+export function collectAggregateErrors(
+  err: unknown,
+): Array<{ id: string; error: string }> {
   const errors: Array<{ id: string; error: string }> = [];
-  const isAgg = !!err && typeof err === "object" && "errors" in (err as Record<string, unknown>);
+  const isAgg =
+    !!err &&
+    typeof err === "object" &&
+    "errors" in (err as Record<string, unknown>);
   if (isAgg) {
     const subs = (err as unknown as AggregateError).errors ?? [];
     for (const se of subs) {
@@ -19,4 +24,3 @@ export function collectAggregateErrors(err: unknown): Array<{ id: string; error:
   }
   return errors;
 }
-

@@ -53,4 +53,3 @@ export const file = {
 
 export type { FileOptions } from "./file.ts";
 export { FilePlugin } from "./plugin.ts";
-

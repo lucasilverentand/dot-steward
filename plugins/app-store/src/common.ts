@@ -6,7 +6,11 @@ export const MAS_CANDIDATES = [
   "/usr/local/bin/mas",
 ];
 
-function execOk(cmd: string, args: string[] = [], timeoutMs = 30000): Promise<boolean> {
+function execOk(
+  cmd: string,
+  args: string[] = [],
+  timeoutMs = 30000,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const child = _execFile(cmd, args, { timeout: timeoutMs }, (err) => {
       resolve(!err);
@@ -23,12 +27,12 @@ export async function findMasCmd(): Promise<string | null> {
   return null;
 }
 
-export function masExec(
+export async function masExec(
   args: string[],
   opts?: { timeoutMs?: number; env?: NodeJS.ProcessEnv },
 ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-  return new Promise(async (resolve) => {
-    const cmd = (await findMasCmd()) ?? "mas"; // last-ditch: try PATH
+  const cmd = (await findMasCmd()) ?? "mas"; // last-ditch: try PATH
+  return new Promise((resolve) => {
     const child = _execFile(
       cmd,
       args,
@@ -53,4 +57,3 @@ export async function masOk(args: string[]): Promise<boolean> {
   const { ok } = await masExec(args, { timeoutMs: 30_000 });
   return ok;
 }
-

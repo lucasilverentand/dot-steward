@@ -8,4 +8,3 @@ export function resolveConfigToFileUrl(p: string): string {
 }
 
 export default resolveConfigToFileUrl;
-
