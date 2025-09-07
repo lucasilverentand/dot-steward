@@ -1,8 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { Plugin } from "@dot-steward/core";
 import { os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemStatus } from "@dot-steward/core";
-import { spawnSync } from "node:child_process";
 import { type ShellKind, runShell } from "./exec.ts";
 
 export class ExecPlugin extends Plugin {

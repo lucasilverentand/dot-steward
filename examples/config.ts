@@ -1,10 +1,10 @@
 import { os, config, profile } from "@dot-steward/core";
 import { app_store } from "../plugins/app-store/src/index.ts";
 import { brew } from "../plugins/brew/src/index.ts";
+import { exec } from "../plugins/exec/src/index.ts";
 import { file } from "../plugins/file/src/index.ts";
 import { mac_settings } from "../plugins/macos-settings/src/index.ts";
 import { mise } from "../plugins/mise/src/index.ts";
-import { exec } from "../plugins/exec/src/index.ts";
 import { shell_config } from "../plugins/shell-config/src/index.ts";
 import { starship } from "../plugins/starship/src/index.ts";
 

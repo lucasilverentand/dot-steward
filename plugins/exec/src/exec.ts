@@ -41,8 +41,12 @@ export async function runShell(
     const child = spawn(bin, args, { cwd, env });
     let stdout = "";
     let stderr = "";
-    child.stdout?.on("data", (d) => (stdout += d.toString()));
-    child.stderr?.on("data", (d) => (stderr += d.toString()));
+    child.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
     child.on("close", (code) =>
       resolve({ ok: code === 0, stdout, stderr, code }),
     );

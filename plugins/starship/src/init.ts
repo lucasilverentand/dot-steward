@@ -1,7 +1,7 @@
-import { Item, os as hostOS, type ItemStatus } from "@dot-steward/core";
+import { Item, type ItemStatus, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
-import { StarshipPlugin } from "./plugin.ts";
 import { shell_config } from "../../shell-config/src/index.ts";
+import { StarshipPlugin } from "./plugin.ts";
 
 type StarshipShell = "bash" | "zsh";
 

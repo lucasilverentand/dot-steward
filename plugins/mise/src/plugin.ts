@@ -1,7 +1,7 @@
-import { Plugin, type ItemStatus } from "@dot-steward/core";
+import { type ItemStatus, Plugin } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import { ExecPlugin } from "../../exec/src/plugin.ts";
-import { ensureMiseInstalled, isMiseInstalled, MISE_MATCH } from "./common.ts";
+import { MISE_MATCH, ensureMiseInstalled, isMiseInstalled } from "./common.ts";
 
 export class MisePlugin extends Plugin {
   shell?: ExecPlugin;

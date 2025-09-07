@@ -1,4 +1,4 @@
-import { Plugin, os as hostOS, type ItemStatus } from "@dot-steward/core";
+import { type ItemStatus, Plugin, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import { ExecPlugin } from "../../exec/src/plugin.ts";
 

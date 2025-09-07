@@ -1,7 +1,7 @@
 import { Item, type ItemStatus } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
-import { MisePlugin } from "./plugin.ts";
 import { ensureMiseInstalled, isMiseInstalled } from "./common.ts";
+import { MisePlugin } from "./plugin.ts";
 
 export class MiseSetup extends Item {
   readonly plugin?: MisePlugin;
@@ -35,11 +35,11 @@ export class MiseSetup extends Item {
     ctx: HostContext,
   ): Promise<import("@dot-steward/core").ItemPlan | null> {
     if (this._state.status === "applied")
-      return { summary: `[noop] mise:setup (already applied)` };
-    return { summary: `mise:setup` };
+      return { summary: "[noop] mise:setup (already applied)" };
+    return { summary: "mise:setup" };
   }
 
   render(): string {
-    return `[mise:setup]`;
+    return "[mise:setup]";
   }
 }

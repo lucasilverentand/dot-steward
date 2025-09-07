@@ -1,8 +1,8 @@
 import {
-  ShellProfile,
-  type ShellProfileConfig,
   type PathSpec,
   type ShellKindSimple,
+  ShellProfile,
+  type ShellProfileConfig,
 } from "./profile.ts";
 
 type Accum = Required<Pick<ShellProfileConfig, "universal" | "bash" | "zsh">> &

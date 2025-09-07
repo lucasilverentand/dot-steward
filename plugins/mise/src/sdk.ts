@@ -1,7 +1,7 @@
-import { MisePlugin } from "./plugin.ts";
-import { MiseTool } from "./tool.ts";
-import { MiseGlobalTools } from "./global.ts";
 import { shell_config } from "../../shell-config/src/index.ts";
+import { MiseGlobalTools } from "./global.ts";
+import type { MisePlugin } from "./plugin.ts";
+import { MiseTool } from "./tool.ts";
 
 type PkgInput =
   | string

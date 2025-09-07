@@ -127,12 +127,7 @@ async function ensureMiseConfigWritable(
     // Ensure parent exists for ~/.config/mise
     `mkdir -p "${home}/.config/mise"`,
     // If cfg is a symlink and target missing, create target dir and empty file
-    `if [ -L "${cfg}" ]; then TGT=$(readlink "${cfg}"); ` +
-      `if [ ! -e "$TGT" ]; then mkdir -p "$(dirname "$TGT")" && : > "$TGT"; fi; ` +
-      `else ` +
-      // If not a symlink, ensure file exists
-      `: > "${cfg}"; ` +
-      `fi`,
+    `if [ -L "${cfg}" ]; then TGT=$(readlink "${cfg}"); if [ ! -e "$TGT" ]; then mkdir -p "$(dirname "$TGT")" && : > "$TGT"; fi; else : > "${cfg}"; fi`,
   ].join(" && ");
   await sh.run(script, { shell: "bash" }, ctx);
 }

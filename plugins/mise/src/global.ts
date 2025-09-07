@@ -1,7 +1,7 @@
 import { Item, type ItemStatus } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
-import { MisePlugin } from "./plugin.ts";
 import { miseCurrentMatches, miseUseGlobal, miseWhich } from "./common.ts";
+import { MisePlugin } from "./plugin.ts";
 
 export class MiseGlobalTools extends Item {
   readonly tools: Record<string, string | undefined>;

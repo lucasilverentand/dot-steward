@@ -1,9 +1,9 @@
 import { Plugin, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemStatus } from "@dot-steward/core";
-import { masOk } from "./common.ts";
 import { brewExec } from "../../brew/src/common.ts";
 import { BrewPlugin } from "../../brew/src/plugin.ts";
+import { masOk } from "./common.ts";
 
 export class AppStorePlugin extends Plugin {
   // Serialize brew operations with other brew-backed items
@@ -46,11 +46,9 @@ export function appStorePlugin(): AppStorePlugin {
       assign?: (p: Plugin) => void;
     }>;
   }
-).get_used_plugins = function () {
-  return [
-    {
-      key: "brew",
-      get_plugin_factory: () => new BrewPlugin(),
-    },
-  ];
-};
+).get_used_plugins = () => [
+  {
+    key: "brew",
+    get_plugin_factory: () => new BrewPlugin(),
+  },
+];

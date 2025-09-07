@@ -225,10 +225,10 @@ function quotePath(p: string): string {
   return p.replace(/"/g, '\\"');
 }
 function sq(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
+  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 function dq(v: string): string {
-  return '"' + v.replace(/"/g, '\\"') + '"';
+  return `"${v.replace(/"/g, '\\"')}"`;
 }
 function normalizeEOL(s: string): string {
   return s.replace(/\r\n/g, "\n");
@@ -258,7 +258,7 @@ function upsertManagedBlock(
   const wrapped = `${start}\n${block}${end}\n`;
   if (has === null) {
     const trimmed =
-      content.endsWith("\n") || content.length === 0 ? content : content + "\n";
+      content.endsWith("\n") || content.length === 0 ? content : `${content}\n`;
     return trimmed + wrapped;
   }
   const s = content.indexOf(start);
