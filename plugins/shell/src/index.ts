@@ -1,4 +1,2 @@
-export * from "./items";
-export * from "./config";
-export * from "./functions";
-export * from "./plugin";
+export { ShellPlugin, shellPlugin } from "./plugin.ts";
+export { shell } from "./sdk.ts";

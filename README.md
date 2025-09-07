@@ -1,50 +1,71 @@
-# Dot Steward Monorepo
+# dot-steward
 
-Dot Steward is a typed toolkit for describing machine setup and dotfile management. It provides a plugin-based API built with Zod so you can declaratively describe packages, files, and shell configuration that make up your environment.
+Monorepo for a Bun-based dot file manager. This repo hosts the core library (including phases and execution engine), the CLI app, and a set of provider plugins described in `docs/design.md`.
 
-This repository is organized as a Bun/Turborepo monorepo and publishes packages under the `@dot-steward/` scope.
+## API Design
+- Fluent, chainable builders across core and plugins
+- Immutability by default; builders produce finalized artifacts via `.build()`/`.emit()`/`.run()`
+- Clear separation of construction vs. execution
 
-## Packages
+## Workspace
+- Tooling: Bun workspaces + Biome formatter/linter
+- Packages live under `packages/`, apps under `apps/`, plugins under `plugins/`
+- Source-only layout: all modules export from `src/index.ts` (no dist step)
 
-- `packages/` – shared libraries and the CLI.
-  - `@dot-steward/core` – shared types and the base `Plugin` class.
-  - `@dot-steward/cli` – command-line interface.
-- `plugins/` – modular plugins that contribute item types:
-  - `@dot-steward/apt` – APT packages for Debian/Ubuntu systems.
-  - `@dot-steward/brew` – Homebrew taps, formulas, and casks.
-  - `@dot-steward/command` – run arbitrary shell commands.
-  - `@dot-steward/file` – ensure files, directories, or symlinks exist.
-  - `@dot-steward/shell` – manage env variables, aliases, and PATH entries.
+## Quick start
+1. Install Bun: https://bun.sh
+2. Install deps: `bun install`
+3. Lint/format: `bun run lint` / `bun run format`
 
-## Usage
+## Example
+Define a config with profiles (all profiles and items apply; no selection):
 
-Run the CLI with Bun:
+```ts
+import { config, profile } from "@dot-steward/core";
 
-```sh
-bunx @dot-steward/cli
+export const profiles = [
+  profile({
+    name: "base",
+    priority: 0,
+    variables: { EDITOR: "nvim" },
+    items: [
+      { id: "env:editor", kind: "env", spec: { name: "EDITOR", value: "nvim" } },
+    ],
+  }),
+  profile({
+    name: "packages",
+    items: [
+      { id: "pkg:git-brew", kind: "package", spec: { provider: "brew", name: "git" } },
+      { id: "pkg:git-apt", kind: "package", spec: { provider: "apt", name: "git" } },
+    ],
+  }),
+];
+
+export default config(profiles);
 ```
 
-Plans group profiles with match conditions and a list of items from the plugin ecosystem.
+Note: Profiles apply if their `match` evaluates true (or if `match` is omitted). Matched profiles are applied in order of appearance.
 
-## Scripts
+## Inputs with Zod (advanced)
+Profiles can declare inputs using a Zod schema. Defaults live in the schema; the `items` builder receives a typed `input` object.
 
-- `bun run build` – run build across workspaces.
-- `bun run dev` – start development servers.
-- `bun run lint` – lint with Biome.
-- `bun run lint:fix` – automatically fix lint issues.
-- `bun run format` – format code with Biome.
-- `bun run test` – run tests for all packages.
+```ts
+import { config, profile, os } from "@dot-steward/core";
+import { z } from "zod";
 
-## Getting Started
+const mac = profile({
+  name: "mac",
+  matches: os("darwin"),
+  inputs: z.object({
+    browser: z.enum(["chrome", "firefox"]).default("chrome"),
+    devtools: z.boolean().default(true),
+  }),
+  items: ({ input, when }) => [
+    ...when(input.browser === "chrome", /* ... */),
+    ...when(input.browser === "firefox", /* ... */),
+    ...when(input.devtools, /* dev tools items */),
+  ],
+});
 
-Install dependencies using [Bun](https://bun.sh):
-
-```sh
-bun install
+export default config(mac);
 ```
-
-Commands use Bun's `bun run` and Turborepo to execute across packages.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).

@@ -1,14 +1,15 @@
 {
-  "name": "@dot-steward/brew",
+  "name": "@dot-steward/plugin-brew",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "types": "src/index.ts",
-  "scripts": {
-    "lint": "biome lint .",
-    "test": "bun test"
+  "exports": {
+    ".": "./src/index.ts"
   },
+  "files": ["src"],
   "dependencies": {
-    "@dot-steward/core": "workspace:*"
+    "@dot-steward/core": "workspace:*",
+    "@dot-steward/plugin-shell": "workspace:*"
   }
 }

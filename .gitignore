@@ -1,6 +1,6 @@
-node_modules
-.bun
-.cache
-.turbo
+node_modules/
+dist/
+build/
 bun.lockb
-dist
+.DS_Store
+.dot-steward/
