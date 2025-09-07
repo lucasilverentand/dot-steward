@@ -39,4 +39,4 @@ const mac = profile({
   ],
 });
 
-export default config([mac]);
+export default config(mac);
