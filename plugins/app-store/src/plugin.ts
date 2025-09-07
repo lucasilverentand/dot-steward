@@ -2,8 +2,12 @@ import { Plugin, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemStatus } from "@dot-steward/core";
 import { masOk } from "./common.ts";
+import { brewExec } from "../../brew/src/common.ts";
+import { BrewPlugin } from "../../brew/src/plugin.ts";
 
 export class AppStorePlugin extends Plugin {
+  // Serialize brew operations with other brew-backed items
+  readonly plugin_key = "brew";
   constructor() {
     // macOS only
     super("app-store", hostOS("darwin"));
@@ -20,12 +24,33 @@ export class AppStorePlugin extends Plugin {
   }
 
   async apply(_ctx: HostContext): Promise<void> {
-    // No-op: installation of `mas` is handled via a Brew formula dependency
-    // added by the SDK (appStore.app() returns [brew.formula("mas"), app]).
-    // This keeps all brew operations serialized under the Brew plugin.
+    // Ensure the `mas` CLI is present; install via Homebrew if missing.
+    const ok = await this.hasMas();
+    if (!ok) {
+      await brewExec(["install", "mas"], { useFastEnv: false });
+    }
   }
 }
 
 export function appStorePlugin(): AppStorePlugin {
   return new AppStorePlugin();
 }
+
+// Declare Brew as a used plugin so Manager ensures Homebrew installation
+// before attempting to install `mas`.
+(
+  AppStorePlugin.prototype as unknown as {
+    get_used_plugins: () => Array<{
+      key: string;
+      get_plugin_factory: () => Plugin;
+      assign?: (p: Plugin) => void;
+    }>;
+  }
+).get_used_plugins = function () {
+  return [
+    {
+      key: "brew",
+      get_plugin_factory: () => new BrewPlugin(),
+    },
+  ];
+};

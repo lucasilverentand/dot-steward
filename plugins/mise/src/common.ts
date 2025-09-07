@@ -40,9 +40,14 @@ export async function miseUseGlobal(
   }
   const exe = cmd ?? "mise";
   if (ctx) await ensureMiseConfigWritable(ctx, sh);
-  const res = await sh.run(`${exe} use -g ${tool}@${v}`, { shell: "bash" }, ctx);
+  const res = await sh.run(
+    `${exe} use -g ${tool}@${v}`,
+    { shell: "bash" },
+    ctx,
+  );
   if (!res.ok) {
-    const msg = res.stderr || res.stdout || `mise use -g failed for ${tool}@${v}`;
+    const msg =
+      res.stderr || res.stdout || `mise use -g failed for ${tool}@${v}`;
     throw new Error(msg.trim());
   }
 }
@@ -66,7 +71,9 @@ export async function miseCurrentMatches(
 ): Promise<boolean> {
   const sh = shell ?? new ExecPlugin();
   const exe = ctx ? await findMiseCmd(ctx, sh) : null;
-  const res = await sh.run(`${exe ?? "mise"} current ${tool}`, { shell: "bash" });
+  const res = await sh.run(`${exe ?? "mise"} current ${tool}`, {
+    shell: "bash",
+  });
   if (!res.ok) return false;
   const out = res.stdout.trim();
   if (!version) return out.length > 0;
@@ -88,11 +95,13 @@ export async function findMiseCmd(
   // 2) Well-known locations
   const home = ctx.user.home ?? "";
   const candidates = [
-    ...(home ? [
-      `${home}/.local/bin/mise`,
-      `${home}/bin/mise`,
-      `${home}/.cargo/bin/mise`,
-    ] : []),
+    ...(home
+      ? [
+          `${home}/.local/bin/mise`,
+          `${home}/bin/mise`,
+          `${home}/.cargo/bin/mise`,
+        ]
+      : []),
     "/opt/homebrew/bin/mise",
     "/usr/local/bin/mise",
     "/usr/bin/mise",
@@ -120,10 +129,10 @@ async function ensureMiseConfigWritable(
     // If cfg is a symlink and target missing, create target dir and empty file
     `if [ -L "${cfg}" ]; then TGT=$(readlink "${cfg}"); ` +
       `if [ ! -e "$TGT" ]; then mkdir -p "$(dirname "$TGT")" && : > "$TGT"; fi; ` +
-    `else ` +
+      `else ` +
       // If not a symlink, ensure file exists
       `: > "${cfg}"; ` +
-    `fi`,
+      `fi`,
   ].join(" && ");
   await sh.run(script, { shell: "bash" }, ctx);
 }

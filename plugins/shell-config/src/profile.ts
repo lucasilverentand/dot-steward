@@ -49,7 +49,10 @@ export class ShellProfile extends Item {
         const abs = resolveHome(f, ctx);
         const cur = await readText(abs);
         const existing = extractManagedBlock(cur, this.marker);
-        if (existing === null || normalizeEOL(existing) !== normalizeEOL(desired)) {
+        if (
+          existing === null ||
+          normalizeEOL(existing) !== normalizeEOL(desired)
+        ) {
           this.set_status("pending");
           return this.state.status;
         }
@@ -104,7 +107,9 @@ export class ShellProfile extends Item {
     }
   }
 
-  dedupe_key(): string { return this.marker; }
+  dedupe_key(): string {
+    return this.marker;
+  }
 
   private enabledShells(): ShellKindSimple[] {
     const shells: ShellKindSimple[] = [];
@@ -121,11 +126,18 @@ export class ShellProfile extends Item {
     return [path.join(home, ".bashrc"), path.join(home, ".bash_profile")];
   }
 
-  private summaryStats(): { paths: number; aliases: number; exports: number; lines: number } {
+  private summaryStats(): {
+    paths: number;
+    aliases: number;
+    exports: number;
+    lines: number;
+  } {
     const merge = (a?: ShellProfileSpec, b?: ShellProfileSpec) => ({
       paths: countPaths(a?.paths) + countPaths(b?.paths),
-      aliases: Object.keys({ ...(a?.aliases ?? {}), ...(b?.aliases ?? {}) }).length,
-      exports: Object.keys({ ...(a?.exports ?? {}), ...(b?.exports ?? {}) }).length,
+      aliases: Object.keys({ ...(a?.aliases ?? {}), ...(b?.aliases ?? {}) })
+        .length,
+      exports: Object.keys({ ...(a?.exports ?? {}), ...(b?.exports ?? {}) })
+        .length,
       lines: (a?.lines?.length ?? 0) + (b?.lines?.length ?? 0),
     });
     const bash = merge(this.cfg.universal, this.cfg.bash);
@@ -169,20 +181,128 @@ function resolveHome(p: string, ctx: HostContext): string {
   return p.startsWith("~/") ? path.join(home, p.slice(2)) : path.join(home, p);
 }
 async function readText(abs: string): Promise<string> {
-  try { return await fs.readFile(abs, "utf8"); } catch { return ""; }
+  try {
+    return await fs.readFile(abs, "utf8");
+  } catch {
+    return "";
+  }
 }
-function countPaths(spec?: PathSpec): number { const n = normalizePathSpec(spec); return n.prepend.length + n.append.length; }
-function normalizePathSpec(spec?: PathSpec): { prepend: string[]; append: string[] } { if (!spec) return { prepend: [], append: [] }; if (Array.isArray(spec)) return { prepend: spec, append: [] }; return { prepend: spec.prepend ?? [], append: spec.append ?? [] }; }
-function mergeSpec(a?: ShellProfileSpec, b?: ShellProfileSpec): ShellProfileSpec { return { paths: mergePathSpec(a?.paths, b?.paths), aliases: { ...(a?.aliases ?? {}), ...(b?.aliases ?? {}) }, exports: { ...(a?.exports ?? {}), ...(b?.exports ?? {}) }, lines: [...(a?.lines ?? []), ...(b?.lines ?? [])] }; }
-function mergePathSpec(a?: PathSpec, b?: PathSpec): PathSpec | undefined { if (!a && !b) return undefined; const na = normalizePathSpec(a); const nb = normalizePathSpec(b); return { prepend: [...na.prepend, ...nb.prepend], append: [...na.append, ...nb.append] }; }
-function quotePath(p: string): string { if (p.startsWith("~/")) return `$HOME/${p.slice(2)}`; if (p.includes("$")) return p; return p.replace(/"/g, '\\"'); }
-function sq(s: string): string { return "'" + s.replace(/'/g, "'\\''") + "'"; }
-function dq(v: string): string { return '"' + v.replace(/"/g, '\\"') + '"'; }
-function normalizeEOL(s: string): string { return s.replace(/\r\n/g, "\n"); }
-function blockMarkers(id: string): { start: string; end: string } { return { start: `# >>> dot-steward:shell profile ${id} >>>`, end: `# <<< dot-steward:shell profile ${id} <<<` }; }
-function extractManagedBlock(content: string, id: string): string | null { const { start, end } = blockMarkers(id); const s = content.indexOf(start); if (s === -1) return null; const e = content.indexOf(end, s + start.length); if (e === -1) return null; const inner = content.slice(s + start.length, e); return inner.replace(/^\n/, "").replace(/\n$/, "\n"); }
-function upsertManagedBlock(content: string, id: string, block: string): string { const { start, end } = blockMarkers(id); const has = extractManagedBlock(content, id); const wrapped = `${start}\n${block}${end}\n`; if (has === null) { const trimmed = content.endsWith("\n") || content.length === 0 ? content : content + "\n"; return trimmed + wrapped; } const s = content.indexOf(start); const e = content.indexOf(end, s + start.length); return content.slice(0, s) + wrapped + content.slice(e + end.length + 1); }
-function removeManagedBlock(content: string, id: string): string | null { const { start, end } = blockMarkers(id); const s = content.indexOf(start); if (s === -1) return null; const e = content.indexOf(end, s + start.length); if (e === -1) return null; const before = content.slice(0, s); const after = content.slice(e + end.length + 1); return before + after; }
-function materializeSpec(base?: ShellProfileSpec, extra?: ShellProfileSpec) { const merged = mergeSpec(base, extra); const paths = normalizePathSpec(merged.paths); const aliasesEntries = Object.entries(merged.aliases ?? {}).sort((a,b)=>a[0].localeCompare(b[0])); const exportsEntries = Object.entries(merged.exports ?? {}).sort((a,b)=>a[0].localeCompare(b[0])); return { paths, aliases: Object.fromEntries(aliasesEntries), exports: Object.fromEntries(exportsEntries), lines: [...(merged.lines ?? [])] }; }
-function stableStringify(v: unknown): string { if (v === null || typeof v !== "object") return JSON.stringify(v); if (Array.isArray(v)) return `[${v.map((x)=>stableStringify(x)).join(",")}]`; const obj = v as Record<string, unknown>; const keys = Object.keys(obj).sort((a,b)=>a.localeCompare(b)); return `{${keys.map((k)=>`${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`; }
-function hashString(s: string): string { let h = 5381 >>> 0; for (let i=0;i<s.length;i++){ h = (((h<<5)+h) ^ s.charCodeAt(i)) >>> 0; } return h.toString(16); }
+function countPaths(spec?: PathSpec): number {
+  const n = normalizePathSpec(spec);
+  return n.prepend.length + n.append.length;
+}
+function normalizePathSpec(spec?: PathSpec): {
+  prepend: string[];
+  append: string[];
+} {
+  if (!spec) return { prepend: [], append: [] };
+  if (Array.isArray(spec)) return { prepend: spec, append: [] };
+  return { prepend: spec.prepend ?? [], append: spec.append ?? [] };
+}
+function mergeSpec(
+  a?: ShellProfileSpec,
+  b?: ShellProfileSpec,
+): ShellProfileSpec {
+  return {
+    paths: mergePathSpec(a?.paths, b?.paths),
+    aliases: { ...(a?.aliases ?? {}), ...(b?.aliases ?? {}) },
+    exports: { ...(a?.exports ?? {}), ...(b?.exports ?? {}) },
+    lines: [...(a?.lines ?? []), ...(b?.lines ?? [])],
+  };
+}
+function mergePathSpec(a?: PathSpec, b?: PathSpec): PathSpec | undefined {
+  if (!a && !b) return undefined;
+  const na = normalizePathSpec(a);
+  const nb = normalizePathSpec(b);
+  return {
+    prepend: [...na.prepend, ...nb.prepend],
+    append: [...na.append, ...nb.append],
+  };
+}
+function quotePath(p: string): string {
+  if (p.startsWith("~/")) return `$HOME/${p.slice(2)}`;
+  if (p.includes("$")) return p;
+  return p.replace(/"/g, '\\"');
+}
+function sq(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+function dq(v: string): string {
+  return '"' + v.replace(/"/g, '\\"') + '"';
+}
+function normalizeEOL(s: string): string {
+  return s.replace(/\r\n/g, "\n");
+}
+function blockMarkers(id: string): { start: string; end: string } {
+  return {
+    start: `# >>> dot-steward:shell profile ${id} >>>`,
+    end: `# <<< dot-steward:shell profile ${id} <<<`,
+  };
+}
+function extractManagedBlock(content: string, id: string): string | null {
+  const { start, end } = blockMarkers(id);
+  const s = content.indexOf(start);
+  if (s === -1) return null;
+  const e = content.indexOf(end, s + start.length);
+  if (e === -1) return null;
+  const inner = content.slice(s + start.length, e);
+  return inner.replace(/^\n/, "").replace(/\n$/, "\n");
+}
+function upsertManagedBlock(
+  content: string,
+  id: string,
+  block: string,
+): string {
+  const { start, end } = blockMarkers(id);
+  const has = extractManagedBlock(content, id);
+  const wrapped = `${start}\n${block}${end}\n`;
+  if (has === null) {
+    const trimmed =
+      content.endsWith("\n") || content.length === 0 ? content : content + "\n";
+    return trimmed + wrapped;
+  }
+  const s = content.indexOf(start);
+  const e = content.indexOf(end, s + start.length);
+  return content.slice(0, s) + wrapped + content.slice(e + end.length + 1);
+}
+function removeManagedBlock(content: string, id: string): string | null {
+  const { start, end } = blockMarkers(id);
+  const s = content.indexOf(start);
+  if (s === -1) return null;
+  const e = content.indexOf(end, s + start.length);
+  if (e === -1) return null;
+  const before = content.slice(0, s);
+  const after = content.slice(e + end.length + 1);
+  return before + after;
+}
+function materializeSpec(base?: ShellProfileSpec, extra?: ShellProfileSpec) {
+  const merged = mergeSpec(base, extra);
+  const paths = normalizePathSpec(merged.paths);
+  const aliasesEntries = Object.entries(merged.aliases ?? {}).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
+  const exportsEntries = Object.entries(merged.exports ?? {}).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
+  return {
+    paths,
+    aliases: Object.fromEntries(aliasesEntries),
+    exports: Object.fromEntries(exportsEntries),
+    lines: [...(merged.lines ?? [])],
+  };
+}
+function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v))
+    return `[${v.map((x) => stableStringify(x)).join(",")}]`;
+  const obj = v as Record<string, unknown>;
+  const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b));
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+function hashString(s: string): string {
+  let h = 5381 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16);
+}

@@ -14,7 +14,10 @@ export class MiseGlobalTools extends Item {
       .join(", ");
   }
 
-  constructor(tools: Record<string, string | undefined>, opts?: { plugin?: MisePlugin }) {
+  constructor(
+    tools: Record<string, string | undefined>,
+    opts?: { plugin?: MisePlugin },
+  ) {
     const plugin = opts?.plugin;
     super({ kind: "mise:global", requires: plugin ? [plugin.id] : [] });
     this.tools = tools;
@@ -33,7 +36,12 @@ export class MiseGlobalTools extends Item {
         this.set_status("pending");
         return this.state.status;
       }
-      const matches = await miseCurrentMatches(name, version, this.plugin?.shell, ctx);
+      const matches = await miseCurrentMatches(
+        name,
+        version,
+        this.plugin?.shell,
+        ctx,
+      );
       if (!matches) {
         this.set_status("pending");
         return this.state.status;
@@ -54,7 +62,9 @@ export class MiseGlobalTools extends Item {
       throw new Error("mise.global requires at least one tool");
   }
 
-  async plan(ctx: HostContext): Promise<import("@dot-steward/core").ItemPlan | null> {
+  async plan(
+    ctx: HostContext,
+  ): Promise<import("@dot-steward/core").ItemPlan | null> {
     // No host-specific matches; always compatible on supported OSes via the plugin
     const list = this.name;
     if (this._state.status === "applied")
@@ -63,7 +73,9 @@ export class MiseGlobalTools extends Item {
   }
 
   render(): string {
-    const parts = Object.entries(this.tools).map(([n, v]) => `${n}@${v ?? "latest"}`);
+    const parts = Object.entries(this.tools).map(
+      ([n, v]) => `${n}@${v ?? "latest"}`,
+    );
     return `[mise:global] ${parts.join(", ")}`;
   }
 

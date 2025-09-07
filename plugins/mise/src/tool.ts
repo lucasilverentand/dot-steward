@@ -9,11 +9,7 @@ export class MiseTool extends Item {
   readonly plugin?: MisePlugin;
   readonly plugin_key = "mise";
 
-  constructor(
-    name: string,
-    version?: string,
-    opts?: { plugin?: MisePlugin },
-  ) {
+  constructor(name: string, version?: string, opts?: { plugin?: MisePlugin }) {
     const plugin = opts?.plugin;
     super({ kind: "mise:tool", requires: plugin ? [plugin.id] : [] });
     this.name = name;
@@ -50,10 +46,14 @@ export class MiseTool extends Item {
       throw new Error("mise.tool requires a non-empty tool name");
   }
 
-  async plan(ctx: HostContext): Promise<import("@dot-steward/core").ItemPlan | null> {
+  async plan(
+    ctx: HostContext,
+  ): Promise<import("@dot-steward/core").ItemPlan | null> {
     const v = this.version ?? "latest";
     if (this._state.status === "applied")
-      return { summary: `[noop] mise:tool ${this.name}@${v} (already applied)` };
+      return {
+        summary: `[noop] mise:tool ${this.name}@${v} (already applied)`,
+      };
     return { summary: `mise:tool ${this.name}@${v}` };
   }
 

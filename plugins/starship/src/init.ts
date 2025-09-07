@@ -14,7 +14,10 @@ export class StarshipInit extends Item {
   constructor(dep?: StarshipPlugin, opts?: { shells?: StarshipShell[] }) {
     super({ kind: "starship:init", requires: dep ? [dep.id] : [] });
     this.plugin = dep;
-    this.shells = (opts?.shells && opts.shells.length > 0) ? Array.from(new Set(opts.shells)) : ["bash", "zsh"];
+    this.shells =
+      opts?.shells && opts.shells.length > 0
+        ? Array.from(new Set(opts.shells))
+        : ["bash", "zsh"];
 
     // Contribute init lines to shell rc via the shell-config accumulator.
     // These contributions are merged and materialized by shell_config.rc.build().
@@ -34,7 +37,11 @@ export class StarshipInit extends Item {
     // Consider "applied" when starship is available; init lines are handled
     // by the shell-config profile item built by the user.
     try {
-      const ok = await this.plugin?.exec?.run("starship --version", { shell: "bash" }, ctx);
+      const ok = await this.plugin?.exec?.run(
+        "starship --version",
+        { shell: "bash" },
+        ctx,
+      );
       this.set_status(ok?.ok ? "applied" : "pending");
     } catch {
       this.set_status("pending");
@@ -57,4 +64,3 @@ export class StarshipInit extends Item {
     return `starship:init:${this.shells.sort().join(",")}`;
   }
 }
-

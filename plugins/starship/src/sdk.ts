@@ -12,7 +12,9 @@ export const starship = {
   // Manage ~/.config/starship.toml via file plugin convenience.
   toml(
     data: unknown,
-    opts?: (FileOptions & { plugin?: import("../../file/src/plugin.ts").FilePlugin }) & { path?: string },
+    opts?: (FileOptions & {
+      plugin?: import("../../file/src/plugin.ts").FilePlugin;
+    }) & { path?: string },
   ) {
     const p = opts?.path ?? ".config/starship.toml";
     return file.toml(p, data, opts);
@@ -20,4 +22,3 @@ export const starship = {
 };
 
 export type { FileOptions } from "../../file/src/sdk.ts";
-

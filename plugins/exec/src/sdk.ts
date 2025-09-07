@@ -26,4 +26,3 @@ export const exec = {
 
 export { ExecPlugin, execPlugin } from "./plugin.ts";
 export type { ShellKind } from "./exec.ts";
-

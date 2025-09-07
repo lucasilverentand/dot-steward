@@ -47,7 +47,12 @@ const mac = profile({
     mise.pkg("node@lts"),
     mac_settings({
       mouse: { speed: 0.2 },
-      dock: { autohide: false, tilesize: 60, largesize: 70, orientation: 'bottom' },
+      dock: {
+        autohide: false,
+        tilesize: 60,
+        largesize: 70,
+        orientation: "bottom",
+      },
     }),
     app_store.app(1502839586, { name: "Hand Mirror" }),
   ],

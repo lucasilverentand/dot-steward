@@ -18,4 +18,3 @@ export const shell_config = {
 };
 
 export type { ShellProfileConfig } from "./profile.ts";
-

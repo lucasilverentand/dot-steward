@@ -23,7 +23,11 @@ export class StarshipPlugin extends Plugin {
 
   private async checkAvailable(ctx: HostContext): Promise<boolean> {
     try {
-      const res = await this.exec?.run("starship --version", { shell: "bash" }, ctx);
+      const res = await this.exec?.run(
+        "starship --version",
+        { shell: "bash" },
+        ctx,
+      );
       return !!res?.ok && (res.stdout.includes("starship") || res.code === 0);
     } catch {
       return false;
@@ -55,4 +59,3 @@ export function starshipPlugin(): StarshipPlugin {
     },
   ];
 };
-

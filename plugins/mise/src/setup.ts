@@ -31,7 +31,9 @@ export class MiseSetup extends Item {
     // no specific validation
   }
 
-  async plan(ctx: HostContext): Promise<import("@dot-steward/core").ItemPlan | null> {
+  async plan(
+    ctx: HostContext,
+  ): Promise<import("@dot-steward/core").ItemPlan | null> {
     if (this._state.status === "applied")
       return { summary: `[noop] mise:setup (already applied)` };
     return { summary: `mise:setup` };

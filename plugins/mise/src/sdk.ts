@@ -52,7 +52,11 @@ export const mise = {
   tool(
     name: string,
     version?: string,
-    opts?: { plugin?: MisePlugin; activateShell?: boolean; shells?: ("zsh" | "bash")[] },
+    opts?: {
+      plugin?: MisePlugin;
+      activateShell?: boolean;
+      shells?: ("zsh" | "bash")[];
+    },
   ) {
     if (opts?.activateShell ?? true)
       addActivationOnce({
@@ -65,7 +69,11 @@ export const mise = {
   // Convenience: accept "tool@version" or tuple/object
   pkg(
     spec: PkgInput,
-    opts?: { plugin?: MisePlugin; activateShell?: boolean; shells?: ("zsh" | "bash")[] },
+    opts?: {
+      plugin?: MisePlugin;
+      activateShell?: boolean;
+      shells?: ("zsh" | "bash")[];
+    },
   ) {
     const { name, version } = parsePkg(spec);
     return mise.tool(name, version, opts);
@@ -73,10 +81,12 @@ export const mise = {
 
   // Define a set of tools with versions to set globally
   global(
-    tools:
-      | Record<string, string | undefined>
-      | Array<PkgInput>,
-    opts?: { plugin?: MisePlugin; activateShell?: boolean; shells?: ("zsh" | "bash")[] },
+    tools: Record<string, string | undefined> | Array<PkgInput>,
+    opts?: {
+      plugin?: MisePlugin;
+      activateShell?: boolean;
+      shells?: ("zsh" | "bash")[];
+    },
   ) {
     if (opts?.activateShell ?? true)
       addActivationOnce({
