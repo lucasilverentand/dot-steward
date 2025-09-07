@@ -1,10 +1,11 @@
 {
   "name": "@dot-steward/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "private": false,
   "description": "Dot Steward command line interface",
   "main": "src/index.ts",
+  "engines": { "bun": ">=1.0.0" },
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -16,13 +17,14 @@
     "dot-steward": "src/cli.ts"
   },
   "files": ["src"],
+  "publishConfig": { "access": "public" },
   "sideEffects": false,
   "scripts": {
     "dev": "bun run src/cli.ts",
     "start": "bun run src/cli.ts"
   },
   "dependencies": {
-    "@dot-steward/core": "workspace:*",
+    "@dot-steward/core": "^0.1.0",
     "commander": "^12.1.0",
     "@clack/prompts": "^0.11.0",
     "listr2": "^8.2.4",

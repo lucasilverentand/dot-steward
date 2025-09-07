@@ -1,17 +1,14 @@
 {
-  "name": "@dot-steward/plugin-app-store",
+  "name": "@dot-steward/plugin-macos-settings",
   "version": "0.1.0",
   "private": false,
   "type": "module",
   "main": "src/index.ts",
   "engines": { "bun": ">=1.0.0" },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "files": ["src"],
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src", "ALL.md"],
   "publishConfig": { "access": "public" },
   "dependencies": {
-    "@dot-steward/core": "^0.1.0",
-    "@dot-steward/plugin-brew": "^0.1.0"
+    "@dot-steward/core": "^0.1.0"
   }
 }

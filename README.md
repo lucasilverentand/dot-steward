@@ -17,6 +17,47 @@ Monorepo for a Bun-based dot file manager. This repo hosts the core library (inc
 2. Install deps: `bun install`
 3. Lint/format: `bun run lint` / `bun run format`
 
+## Publish & Use in Other Repos
+
+- Packages published:
+  - `@dot-steward/core`
+  - `@dot-steward/cli`
+  - `@dot-steward/plugin-brew`, `@dot-steward/plugin-file`, `@dot-steward/plugin-exec`, `@dot-steward/plugin-mise`, `@dot-steward/plugin-shell-config`, `@dot-steward/plugin-app-store`
+
+- Prepare/publish (one-time per release):
+  - Set versions in each package and ensure inter-package deps point to the tagged version (already configured as `^0.1.0`).
+  - Publish in order (root): `bun run release:publish`.
+
+- Install in a consumer repo:
+  - Ensure Bun is installed.
+  - Add deps: `bun add -D @dot-steward/cli` and add plugins you use, e.g. `bun add @dot-steward/core @dot-steward/plugin-brew @dot-steward/plugin-file @dot-steward/plugin-exec @dot-steward/plugin-mise @dot-steward/plugin-shell-config`.
+  - Create a `config.ts` that imports from the published packages, e.g.:
+
+    ```ts
+    import { config, profile, os } from "@dot-steward/core";
+    import { brew } from "@dot-steward/plugin-brew";
+    import { file } from "@dot-steward/plugin-file";
+    import { exec } from "@dot-steward/plugin-exec";
+    import { shell_config } from "@dot-steward/plugin-shell-config";
+    // ... others as needed
+
+    const mac = profile({ name: "mac", matches: os("darwin"), items: [
+      brew.formula("git"),
+      file.from("./hello.txt", ".config/dot-steward/hello.txt"),
+      shell_config.rc.build(),
+    ]});
+
+    export default config(mac);
+    ```
+
+- Run the CLI in the consumer repo:
+  - Using bunx: `bunx -p @dot-steward/cli dot-steward plan -c ./config.ts`
+  - Or after adding as devDependency: `bunx dot-steward plan -c ./config.ts`
+
+Notes:
+- The CLI uses a Bun shebang and runs TypeScript directly; Bun is required at runtime.
+- Example config in `examples/config.ts` uses local workspace imports; in external repos, import from the published `@dot-steward/*` packages as shown above.
+
 ## Example
 Define a config with profiles (all profiles and items apply; no selection):
 

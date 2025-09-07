@@ -1,8 +1,9 @@
 {
   "name": "@dot-steward/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
+  "engines": { "bun": ">=1.0.0" },
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -11,6 +12,7 @@
     }
   },
   "files": ["src"],
+  "publishConfig": { "access": "public" },
   "sideEffects": false,
   "dependencies": {}
 }

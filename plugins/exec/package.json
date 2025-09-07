@@ -1,13 +1,14 @@
 {
   "name": "@dot-steward/plugin-exec",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "main": "src/index.ts",
+  "engines": { "bun": ">=1.0.0" },
   "exports": { ".": "./src/index.ts" },
   "files": ["src"],
+  "publishConfig": { "access": "public" },
   "dependencies": {
-    "@dot-steward/core": "workspace:*"
+    "@dot-steward/core": "^0.1.0"
   }
 }
-
