@@ -1,7 +1,7 @@
 import { Item, os as hostOS } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
 import type { ItemPlan, ItemStatus } from "@dot-steward/core";
-import { ShellPlugin } from "../../shell/src/plugin.ts";
+import { ExecPlugin } from "../../exec/src/plugin.ts";
 import { ALL_CATALOG } from "./catalog.ts";
 import { type MacSettings, MacSettingsSchema } from "./schema.ts";
 import type { CatalogRule, Rule, WriteType } from "./types.ts";
@@ -9,11 +9,11 @@ import type { CatalogRule, Rule, WriteType } from "./types.ts";
 // Item: applies macOS settings via `defaults write` + targeted restarts
 export class MacSettingsItem extends Item {
   readonly matches = hostOS("darwin");
-  readonly plugin_key = "shell";
-  readonly plugin?: ShellPlugin;
+  readonly plugin_key = "exec";
+  readonly plugin?: ExecPlugin;
   private cfg: MacSettings;
 
-  constructor(cfg: MacSettings, plugin?: ShellPlugin) {
+  constructor(cfg: MacSettings, plugin?: ExecPlugin) {
     super({ kind: "macos:settings", requires: plugin ? [plugin.id] : [] });
     this.cfg = cfg;
     this.plugin = plugin;
@@ -31,8 +31,8 @@ export class MacSettingsItem extends Item {
     return cur;
   }
 
-  get_plugin_factory(): ShellPlugin {
-    return new ShellPlugin();
+  get_plugin_factory(): ExecPlugin {
+    return new ExecPlugin();
   }
 
   async probe(ctx: HostContext): Promise<ItemStatus> {
@@ -76,14 +76,14 @@ export class MacSettingsItem extends Item {
   }
 
   private async run(cmd: string, ctx: HostContext) {
-    // Prefer ShellPlugin to leverage sudo prompting behavior if needed
+    // Prefer ExecPlugin to leverage sudo prompting behavior if needed
     const res = this.plugin
       ? await this.plugin.run(
           cmd,
           { shell: "sh", cwd: ctx.user.home ?? "." },
           ctx,
         )
-      : await (await import("../../shell/src/exec.ts")).runShell(cmd, {
+      : await (await import("../../exec/src/exec.ts")).runShell(cmd, {
           shell: "sh",
           cwd: ctx.user.home ?? ".",
         });
@@ -121,7 +121,7 @@ export class MacSettingsItem extends Item {
           { shell: "sh", cwd: ctx.user.home ?? "." },
           ctx,
         )
-      : await (await import("../../shell/src/exec.ts")).runShell(cmd, {
+      : await (await import("../../exec/src/exec.ts")).runShell(cmd, {
           shell: "sh",
           cwd: ctx.user.home ?? ".",
         });

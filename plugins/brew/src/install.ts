@@ -1,5 +1,5 @@
 import type { HostContext } from "@dot-steward/core";
-import type { ShellPlugin } from "@dot-steward/plugin-shell";
+import type { ExecPlugin } from "../../exec/src/plugin.ts";
 import { execCapture, findBrewCmd } from "./common.ts";
 
 export async function isHomebrewInstalled(): Promise<boolean> {
@@ -8,7 +8,7 @@ export async function isHomebrewInstalled(): Promise<boolean> {
 
 export async function installHomebrewNonInteractive(
   ctx: HostContext,
-  shell?: ShellPlugin,
+  exec?: ExecPlugin,
 ): Promise<void> {
   const script =
     "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 /bin/bash";
@@ -19,8 +19,8 @@ export async function installHomebrewNonInteractive(
       "Homebrew install should not be run as root. Please run dot-steward as a non-root user.",
     );
   }
-  const res = shell
-    ? await shell.run(script, { shell: "bash", env }, ctx)
+  const res = exec
+    ? await exec.run(script, { shell: "bash", env }, ctx)
     : await execCapture("/bin/bash", ["-lc", script], { env });
   const ok = res.ok;
   const stderr = res.stderr;

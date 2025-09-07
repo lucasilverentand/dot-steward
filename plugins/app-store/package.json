@@ -10,7 +10,6 @@
   "files": ["src"],
   "dependencies": {
     "@dot-steward/core": "workspace:*",
-    "@dot-steward/plugin-shell": "workspace:*",
     "@dot-steward/plugin-brew": "workspace:*"
   }
 }

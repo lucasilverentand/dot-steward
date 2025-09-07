@@ -1,5 +1,5 @@
 {
-  "name": "@dot-steward/plugin-brew",
+  "name": "@dot-steward/plugin-mise",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,7 @@
   "files": ["src"],
   "dependencies": {
     "@dot-steward/core": "workspace:*",
-    "@dot-steward/plugin-exec": "workspace:*"
+    "@dot-steward/plugin-exec": "workspace:*",
+    "@dot-steward/plugin-shell-config": "workspace:*"
   }
 }

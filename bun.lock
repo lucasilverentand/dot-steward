@@ -32,6 +32,15 @@
       "name": "@dot-steward/core",
       "version": "0.0.0",
     },
+    "plugins/app-store": {
+      "name": "@dot-steward/plugin-app-store",
+      "version": "0.0.0",
+      "dependencies": {
+        "@dot-steward/core": "workspace:*",
+        "@dot-steward/plugin-brew": "workspace:*",
+        "@dot-steward/plugin-shell": "workspace:*",
+      },
+    },
     "plugins/brew": {
       "name": "@dot-steward/plugin-brew",
       "version": "0.0.0",
@@ -81,6 +90,8 @@
     "@dot-steward/cli": ["@dot-steward/cli@workspace:packages/cli"],
 
     "@dot-steward/core": ["@dot-steward/core@workspace:packages/core"],
+
+    "@dot-steward/plugin-app-store": ["@dot-steward/plugin-app-store@workspace:plugins/app-store"],
 
     "@dot-steward/plugin-brew": ["@dot-steward/plugin-brew@workspace:plugins/brew"],
 

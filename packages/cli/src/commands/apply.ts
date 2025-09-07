@@ -382,11 +382,13 @@ export function registerApply(program: Command): void {
     )
     .option("--skip-updates", "Skip upgrade checks for already-installed items")
     .option("-f, --force", "Force re-run apply for already-applied items")
+    .option("-y, --yes", "Assume 'yes' and skip interactive prompts")
     .action(
       async (opts: {
         config: string;
         skipUpdates?: boolean;
         force?: boolean;
+        yes?: boolean;
       }) => {
         const mgr = new Manager();
         const cfgUrl = resolveConfigToFileUrl(opts.config);
@@ -560,7 +562,7 @@ export function registerApply(program: Command): void {
                 : toApplySavedCount > 0
                   ? "Apply this plan?"
                   : `Remove ${removedCountForPrompt} item(s)?`;
-            const proceed = await askConfirm(promptMsg);
+            const proceed = opts.yes ? true : await askConfirm(promptMsg);
             userConfirmed = proceed;
             if (!proceed) {
               // Add a spacer line with the gutter before the aborted message
@@ -927,7 +929,7 @@ export function registerApply(program: Command): void {
                     ? `Re-apply ${toApplyCount2} item(s)?`
                     : "Apply this plan?"
                   : `Remove ${removedCountForPrompt} item(s)?`;
-            const proceed = await askConfirm(promptMsg);
+            const proceed = opts.yes ? true : await askConfirm(promptMsg);
             userConfirmed = proceed;
             if (!proceed) {
               // Add a spacer line with the gutter before the aborted message

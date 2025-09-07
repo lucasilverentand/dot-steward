@@ -1,13 +1,13 @@
 import { type ItemStatus, Plugin } from "@dot-steward/core";
 import type { HostContext } from "@dot-steward/core";
-import { ShellPlugin } from "@dot-steward/plugin-shell";
+import { ExecPlugin } from "../../exec/src/plugin.ts";
 import { BREW_MATCH } from "./common.ts";
 import { installHomebrewNonInteractive } from "./install.ts";
 import { isHomebrewInstalled } from "./install.ts";
 
 export class BrewPlugin extends Plugin {
   // Optional injected shell plugin (resolved by Manager)
-  shell?: ShellPlugin;
+  exec?: ExecPlugin;
   constructor() {
     // Homebrew is meaningful on macOS and Linux only
     super("brew", BREW_MATCH);
@@ -22,7 +22,7 @@ export class BrewPlugin extends Plugin {
   async apply(ctx: HostContext): Promise<void> {
     // Ensure Homebrew is installed. If not, run the official install script
     if (!(await isHomebrewInstalled())) {
-      await installHomebrewNonInteractive(ctx, this.shell);
+      await installHomebrewNonInteractive(ctx, this.exec);
     }
   }
 
@@ -52,10 +52,10 @@ export function brewPlugin(): BrewPlugin {
 }> {
   return [
     {
-      key: "shell",
-      get_plugin_factory: () => new ShellPlugin(),
+      key: "exec",
+      get_plugin_factory: () => new ExecPlugin(),
       assign: (p: Plugin) => {
-        this.shell = p as ShellPlugin;
+        this.exec = p as ExecPlugin;
       },
     },
   ];
