@@ -14,5 +14,8 @@
   "files": ["src"],
   "publishConfig": { "access": "public" },
   "sideEffects": false,
+  "scripts": {
+    "release:publish": "npm publish --access public"
+  },
   "dependencies": {}
 }

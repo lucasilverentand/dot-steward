@@ -13,6 +13,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
 
@@ -23,10 +29,19 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install deps
-        run: bun install --frozen-lockfile
+        run: |
+          npm ci || npm install --no-audit --no-fund
 
       - name: Lint
         run: bun run lint
 
-      - name: Publish packages
-        run: bun run release:publish
+      - name: Bump versions from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Version from tag: $VERSION"
+          npm run release:version -- $VERSION
+
+      - name: Publish packages (npm via turbo)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm run release:publish

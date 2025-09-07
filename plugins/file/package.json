@@ -10,6 +10,9 @@
   },
   "files": ["src"],
   "publishConfig": { "access": "public" },
+  "scripts": {
+    "release:publish": "npm publish --access public"
+  },
   "dependencies": {
     "@dot-steward/core": "^0.1.0"
   }

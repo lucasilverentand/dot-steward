@@ -21,7 +21,8 @@
   "sideEffects": false,
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "start": "bun run src/cli.ts"
+    "start": "bun run src/cli.ts",
+    "release:publish": "npm publish --access public"
   },
   "dependencies": {
     "@dot-steward/core": "^0.1.0",
