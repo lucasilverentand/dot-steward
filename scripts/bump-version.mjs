@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = process.cwd();
 const versionArg = process.argv[2];
 if (!versionArg) {
-  console.error("Usage: node scripts/bump-version.mjs <version>");
+  console.error("Usage: bun run scripts/bump-version.mjs <version>");
   process.exit(1);
 }
 

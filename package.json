@@ -10,7 +10,7 @@
     "lint": "biome check . && bun run scripts/check-static-this.mjs && bun run scripts/check-empty-lines.mjs",
     "lint:static-this": "bun run scripts/check-static-this.mjs",
     "format": "biome format --write .",
-    "release:version": "node scripts/bump-version.mjs",
+    "release:version": "bun run scripts/bump-version.mjs",
     "release:publish": "turbo run release:publish"
   },
   "devDependencies": {

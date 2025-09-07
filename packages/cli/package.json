@@ -17,12 +17,12 @@
     "dot-steward": "src/cli.ts"
   },
   "files": ["src"],
-  "publishConfig": { "access": "public" },
+  "publishConfig": { "access": "public", "registry": "https://npm.pkg.github.com" },
   "sideEffects": false,
   "scripts": {
     "dev": "bun run src/cli.ts",
     "start": "bun run src/cli.ts",
-    "release:publish": "npm publish --access public"
+    "release:publish": "bun publish --access public"
   },
   "dependencies": {
     "@dot-steward/core": "^0.1.0",

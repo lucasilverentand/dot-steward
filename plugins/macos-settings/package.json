@@ -7,9 +7,9 @@
   "engines": { "bun": ">=1.0.0" },
   "exports": { ".": "./src/index.ts" },
   "files": ["src", "ALL.md"],
-  "publishConfig": { "access": "public" },
+  "publishConfig": { "access": "public", "registry": "https://npm.pkg.github.com" },
   "scripts": {
-    "release:publish": "npm publish --access public"
+    "release:publish": "bun publish --access public"
   },
   "dependencies": {
     "@dot-steward/core": "^0.1.0"
