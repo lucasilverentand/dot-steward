@@ -2,9 +2,11 @@ import { Config, ConfigSchema } from "./config.ts";
 import { DependencyGraph } from "./deps.ts";
 import { type CoreEvents, EventBus, validateCoreEvent } from "./events.ts";
 import { HostContext } from "./host/context.ts";
+import { os, any } from "./host/matching.ts";
 import type { Item } from "./item.ts";
 import { Plugin } from "./plugin.ts";
 import type { Profile } from "./profile.ts";
+import { profile as makeProfile } from "./profile.ts";
 
 export class Manager {
   readonly host = new HostContext();
@@ -35,7 +37,26 @@ export class Manager {
         res.success &&
         Array.isArray((cfg as { profiles?: unknown }).profiles)
       ) {
-        profiles = (cfg as { profiles: Profile[] }).profiles;
+        const raw = (cfg as { profiles: unknown[] }).profiles;
+        const first = raw[0] as { kind?: string } | undefined;
+        if (first && first.kind === "profile") {
+          profiles = raw as unknown as Profile[];
+        } else {
+          // Treat as a flat array of items; wrap into a default always-on profile
+          const items = raw as unknown as Item[];
+          profiles = [
+            makeProfile({
+              name: "default",
+              matches: any(
+                os("linux"),
+                os("darwin"),
+                os("win32"),
+                os("unsupported"),
+              ),
+              items,
+            }),
+          ];
+        }
       }
     }
     if (!profiles)

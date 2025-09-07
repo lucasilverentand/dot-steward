@@ -12,18 +12,16 @@ Unified core that provides the analyze/plan/apply phases and the execution engin
 import { Manager, config, profile } from "@dot-steward/core";
 import { brew } from "@dot-steward/plugin-brew";
 
-const cfg = config({
-  profiles: [
-    profile({
-      name: "base",
-      // Use the same instance to construct items
-      items: [
-        brew.formula("git"),
-        brew.tap("homebrew/cask"),
-      ],
-    }),
-  ],
-});
+const cfg = config([
+  profile({
+    name: "base",
+    // Use the same instance to construct items
+    items: [
+      brew.formula("git"),
+      brew.tap("homebrew/cask"),
+    ],
+  }),
+]);
 
 const mgr = new Manager();
 await mgr.init("file:///abs/path/to/dot-steward.config.ts");

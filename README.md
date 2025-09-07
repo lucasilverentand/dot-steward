@@ -41,7 +41,7 @@ export const profiles = [
   }),
 ];
 
-export default config({ profiles });
+export default config(profiles);
 ```
 
 Note: Profiles apply if their `match` evaluates true (or if `match` is omitted). Matched profiles are applied in order of appearance.
@@ -67,5 +67,5 @@ const mac = profile({
   ],
 });
 
-export default config({ profiles: [mac] });
+export default config(mac);
 ```
