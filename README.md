@@ -22,7 +22,7 @@ Monorepo for a Bun-based dot file manager. This repo hosts the core library (inc
 - Packages published:
   - `@dot-steward/core`
   - `@dot-steward/cli`
-  - `@dot-steward/plugin-brew`, `@dot-steward/plugin-file`, `@dot-steward/plugin-exec`, `@dot-steward/plugin-mise`, `@dot-steward/plugin-shell-config`, `@dot-steward/plugin-app-store`
+  - `@dot-steward/plugin-brew`, `@dot-steward/plugin-file`, `@dot-steward/plugin-exec`, `@dot-steward/plugin-mise`, `@dot-steward/plugin-shell-config`, `@dot-steward/plugin-app-store`, `@dot-steward/plugin-ghostty`
 
 - Prepare/publish (one-time per release):
   - Set versions in each package and ensure inter-package deps point to the tagged version (already configured as `^0.1.0`).
