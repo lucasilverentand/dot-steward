@@ -12,7 +12,10 @@
     }
   },
   "files": ["src"],
-  "publishConfig": { "access": "public", "registry": "https://npm.pkg.github.com" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "sideEffects": false,
   "scripts": {
     "release:publish": "bun publish --access public"

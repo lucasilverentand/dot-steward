@@ -9,7 +9,10 @@
     ".": "./src/index.ts"
   },
   "files": ["src"],
-  "publishConfig": { "access": "public", "registry": "https://npm.pkg.github.com" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "release:publish": "bun publish --access public"
   },
