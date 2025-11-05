@@ -3,6 +3,7 @@ import { app_store } from "../plugins/app-store/src/index.ts";
 import { brew } from "../plugins/brew/src/index.ts";
 import { exec } from "../plugins/exec/src/index.ts";
 import { file } from "../plugins/file/src/index.ts";
+import { ghostty } from "../plugins/ghostty/src/index.ts";
 import { mac_settings } from "../plugins/macos-settings/src/index.ts";
 import { mise } from "../plugins/mise/src/index.ts";
 import { shell_config } from "../plugins/shell-config/src/index.ts";
@@ -29,6 +30,13 @@ const mac = profile({
       add_newline: false,
       scan_timeout: 10,
       command_timeout: 1000,
+    }),
+    // Install Ghostty terminal and manage its config
+    ghostty.install(),
+    ghostty.config({
+      font_family: "FiraCode Nerd Font",
+      font_size: 13,
+      theme: "Ghostty",
     }),
     file.yaml(
       ".config/dot-steward/app.yaml",

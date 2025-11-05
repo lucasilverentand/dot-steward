@@ -17,7 +17,10 @@
     "dot-steward": "src/cli.ts"
   },
   "files": ["src"],
-  "publishConfig": { "access": "public", "registry": "https://npm.pkg.github.com" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "sideEffects": false,
   "scripts": {
     "dev": "bun run src/cli.ts",
