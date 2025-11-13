@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // Type Checking
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+
+    // Modules
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+
+    // Emit
+    "noEmit": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // JavaScript Support
+    "allowJs": false,
+    "checkJs": false,
+
+    // Interop Constraints
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+
+    // Language and Environment
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "moduleDetection": "force",
+
+    // Skip Checking
+    "skipLibCheck": true,
+
+    // Bun-specific
+    "types": ["bun-types"],
+
+    // Path Mapping
+    "baseUrl": ".",
+    "paths": {
+      "@dot-steward/core": ["./packages/core/src"],
+      "@dot-steward/cli": ["./packages/cli/src"],
+      "@dot-steward/plugin-*": ["./plugins/*/src"]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "plugins/*/src/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "**/.dot-steward",
+    "**/dist",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
