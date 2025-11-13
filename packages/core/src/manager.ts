@@ -7,6 +7,16 @@ import type { Item } from "./item.ts";
 import { Plugin } from "./plugin.ts";
 import type { Profile } from "./profile.ts";
 import { profile as makeProfile } from "./profile.ts";
+import {
+  isPlugin,
+  hasPluginProperty,
+  hasPluginKey,
+  hasPluginFactory,
+  hasUsedPlugins,
+  hasDedupeKey,
+  hasName,
+  isProfileArray,
+} from "./type-guards.ts";
 
 export class Manager {
   readonly host = new HostContext();
@@ -88,36 +98,32 @@ export class Manager {
       recordBinding: boolean,
     ) => {
       // If the item itself is a Plugin instance, include it
-      if ((it as unknown) instanceof Plugin) {
-        const p = it as unknown as Plugin;
-        discovered.set(p.id, p);
+      if (isPlugin(it)) {
+        discovered.set(it.id, it);
         // index by key (plugin name) for later lookups
-        const key = (p as unknown as { name?: string }).name;
-        if (key) discoveredByKey.set(key, p);
+        const key = hasName(it) ? it.name : undefined;
+        if (key) discoveredByKey.set(key, it);
         // A plugin item does not bind as an owning plugin for itself
         return;
       }
-      const rec = it as unknown as {
-        plugin?: unknown;
-        plugin_key?: string;
-        get_plugin_factory?: () => Plugin;
-      };
+
       // If the item carries a `plugin` reference, include it
-      if (rec.plugin && rec.plugin instanceof Plugin) {
-        const p = rec.plugin as Plugin;
+      if (hasPluginProperty(it)) {
+        const p = it.plugin;
         discovered.set(p.id, p);
-        const key = (p as unknown as { name?: string }).name;
+        const key = hasName(p) ? p.name : undefined;
         if (key) discoveredByKey.set(key, p);
         if (recordBinding) itemToPlugin.set(it.id, p);
         return;
       }
+
       // Duck-typed metadata: plugin_key + get_plugin_factory()
-      if (rec.plugin_key && typeof rec.get_plugin_factory === "function") {
-        let p = discoveredByKey.get(rec.plugin_key);
+      if (hasPluginKey(it) && hasPluginFactory(it)) {
+        let p = discoveredByKey.get(it.plugin_key);
         if (!p) {
-          p = rec.get_plugin_factory();
+          p = it.get_plugin_factory();
           discovered.set(p.id, p);
-          discoveredByKey.set(rec.plugin_key, p);
+          discoveredByKey.set(it.plugin_key, p);
         }
         if (recordBinding) itemToPlugin.set(it.id, p);
       }
@@ -145,15 +151,8 @@ export class Manager {
     while (queue.length > 0) {
       const user = queue.shift(); // plugin that may use others
       if (!user) break;
-      const uses = (
-        user as unknown as {
-          get_used_plugins?: () => Array<{
-            key: string;
-            get_plugin_factory: () => Plugin;
-            assign?: (p: Plugin) => void;
-          }>;
-        }
-      ).get_used_plugins?.();
+
+      const uses = hasUsedPlugins(user) ? user.get_used_plugins() : undefined;
       if (!uses || uses.length === 0) continue;
       for (const u of uses) {
         let dep = discoveredByKey.get(u.key);
@@ -182,16 +181,14 @@ export class Manager {
     // Include plugins so that items can depend on their owning plugin
     // Before adding, deduplicate compatible items that declare a stable dedupe key
     const profileItemsRaw = this._activeProfiles.flatMap((p) => p.items);
-    type DedupeKeyFn = () => string;
     const getKey = (it: import("./item.ts").Item): string | null => {
-      const f = (it as unknown as { dedupe_key?: DedupeKeyFn }).dedupe_key;
-      if (typeof f === "function") {
-        try {
-          const k = f.call(it);
-          if (typeof k === "string" && k.length > 0) return k;
-        } catch {
-          // ignore bad keys
-        }
+      if (!hasDedupeKey(it)) return null;
+
+      try {
+        const k = it.dedupe_key();
+        if (typeof k === "string" && k.length > 0) return k;
+      } catch {
+        // ignore bad keys
       }
       return null;
     };
@@ -513,7 +510,7 @@ export class Manager {
         }
 
         const wasAppliedBefore = it.state.status === "applied";
-        const pluginKey = (it as unknown as { plugin_key?: string }).plugin_key;
+        const pluginKey = hasPluginKey(it) ? it.plugin_key : undefined;
         // Validate preconditions before applying (do not retry on validation errors)
         await it.validate(this.host);
         if (forceApply || !wasAppliedBefore) {

@@ -8,3 +8,5 @@ export * from "./events.ts";
 export * from "./item.ts";
 export * from "./deps.ts";
 export * from "./apply.ts";
+export * from "./errors.ts";
+export * from "./type-guards.ts";

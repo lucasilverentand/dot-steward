@@ -250,10 +250,18 @@ export abstract class Item implements ItemShape {
 
   private static new_id(): string {
     try {
-      const id = (
-        globalThis as unknown as { crypto?: { randomUUID?: () => string } }
-      ).crypto?.randomUUID?.();
-      if (typeof id === "string" && id.length > 0) return id;
+      if (typeof globalThis === "object" && globalThis !== null) {
+        const crypto = (globalThis as { crypto?: unknown }).crypto;
+        if (
+          typeof crypto === "object" &&
+          crypto !== null &&
+          "randomUUID" in crypto &&
+          typeof (crypto as { randomUUID: unknown }).randomUUID === "function"
+        ) {
+          const id = (crypto as { randomUUID: () => string }).randomUUID();
+          if (typeof id === "string" && id.length > 0) return id;
+        }
+      }
     } catch {
       // Fallback for environments without crypto.randomUUID
       const rnd = Math.random().toString(16).slice(2).padEnd(12, "0");
