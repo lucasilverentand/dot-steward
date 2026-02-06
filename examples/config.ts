@@ -1,4 +1,4 @@
-import { os, config, profile } from "@dot-steward/core";
+import { os, config, profile, any, env_var } from "@dot-steward/core";
 import { app_store } from "../plugins/app-store/src/index.ts";
 import { brew } from "../plugins/brew/src/index.ts";
 import { exec } from "../plugins/exec/src/index.ts";
@@ -59,7 +59,7 @@ const mac = profile({
         autohide: false,
         tilesize: 60,
         largesize: 70,
-        orientation: "bottom",
+        orientation: "left"
       },
     }),
     app_store.app(1502839586, { name: "Hand Mirror" }),

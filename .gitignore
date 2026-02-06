@@ -3,4 +3,5 @@ dist/
 build/
 bun.lockb
 .DS_Store
+.vscode/
 .dot-steward/
