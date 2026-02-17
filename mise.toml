@@ -1,0 +1,29 @@
+[tools]
+rust = "stable"
+
+[tasks.setup]
+description = "Install Rust formatter and linter components"
+run = "rustup component add rustfmt clippy"
+
+[tasks.fmt]
+description = "Format Rust code"
+depends = ["setup"]
+run = "cargo fmt --all"
+
+[tasks.fmt-check]
+description = "Check Rust formatting"
+depends = ["setup"]
+run = "cargo fmt --all --check"
+
+[tasks.lint]
+description = "Run clippy with warnings denied"
+depends = ["setup"]
+run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run test suite"
+run = "cargo test --all-targets"
+
+[tasks.ci]
+description = "Run all CI checks locally"
+depends = ["fmt-check", "lint", "test"]

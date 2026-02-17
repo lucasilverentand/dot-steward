@@ -35,8 +35,17 @@ cargo run -- apply -c dot-steward.toml
 
 ## Development
 
+This project uses [mise-en-place](https://mise.jdx.dev/) to pin local tooling and provide task shortcuts.
+
 ```bash
-cargo fmt
-cargo clippy --all-targets --all-features
-cargo test
+# Install pinned tools (Rust stable)
+mise install
+
+# Run all CI checks locally (format, lint, test)
+mise run ci
+
+# Or run individual checks
+mise run fmt-check
+mise run lint
+mise run test
 ```
