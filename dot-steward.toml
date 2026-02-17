@@ -1,0 +1,4 @@
+[[tasks]]
+name = "example"
+command = "echo 'configure your machine here'"
+description = "Sample task"

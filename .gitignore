@@ -1,7 +1,4 @@
-node_modules/
-dist/
-build/
-bun.lockb
+/target/
 .DS_Store
 .vscode/
 .dot-steward/
