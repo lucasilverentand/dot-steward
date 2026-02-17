@@ -1,7 +1,0 @@
-{
-  "name": "@dot-steward/examples",
-  "private": true,
-  "dependencies": {
-    "@dot-steward/core": "workspace:*"
-  }
-}
