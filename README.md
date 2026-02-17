@@ -29,6 +29,9 @@ command = "rustup toolchain install stable"
 # Inspect execution order
 cargo run -- plan -c dot-steward.toml
 
+# Validate configuration structure and duplicate task names
+cargo run -- validate -c dot-steward.toml
+
 # Execute tasks sequentially
 cargo run -- apply -c dot-steward.toml
 ```

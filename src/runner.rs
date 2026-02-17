@@ -6,9 +6,12 @@ use anyhow::{bail, Context, Result};
 use crate::config::{Config, Task};
 
 pub fn render_plan(config: &Config) -> String {
-    let mut output = String::from("Plan:\n");
+    let mut output = format!("Plan ({} tasks):\n", config.tasks.len());
     for (index, task) in config.tasks.iter().enumerate() {
         let _ = writeln!(output, "{}. {} -> {}", index + 1, task.name, task.command);
+        if let Some(description) = task.description.as_deref() {
+            let _ = writeln!(output, "   description: {description}");
+        }
     }
     output
 }

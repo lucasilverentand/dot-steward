@@ -31,6 +31,12 @@ enum Commands {
         #[arg(short, long, default_value = "dot-steward.toml")]
         config: PathBuf,
     },
+    /// Validate config and exit without printing a plan or running commands
+    Validate {
+        /// Path to TOML config file
+        #[arg(short, long, default_value = "dot-steward.toml")]
+        config: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -45,6 +51,10 @@ fn main() -> Result<()> {
             let cfg = load_config(&config)?;
             run_apply(&cfg)?;
             println!("Apply complete.");
+        }
+        Commands::Validate { config } => {
+            load_config(&config)?;
+            println!("Config is valid.");
         }
     }
 
